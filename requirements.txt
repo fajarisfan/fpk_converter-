@@ -1,5 +1,6 @@
-streamlit>=1.28.0
-pandas>=2.0.0
-tabula-py>=2.8.0
+streamlit
+pandas
+tabula-py
 default-jdk
+
 
