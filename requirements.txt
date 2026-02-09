@@ -1,6 +1,7 @@
 streamlit
 pandas
 tabula-py
-default-jdk
+
+
 
 
