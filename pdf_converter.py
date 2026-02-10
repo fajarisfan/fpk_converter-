@@ -31,7 +31,6 @@ st.markdown("""
     
     .stButton>button { width: 100%; border-radius: 10px; height: 50px; font-weight: bold; }
     
-    /* Bikin tabel lebih ringan diproses browser */
     .stDataFrame { border-radius: 10px; overflow: hidden; }
 </style>
 """, unsafe_allow_html=True)
@@ -66,11 +65,9 @@ def process_data(pdf_path):
     df_data.columns = ['No. Urut', 'No.SEP', 'Tgl. Verifikasi', 'Biaya Riil RS', 'Diajukan', 'Disetujui']
     df_data['No.SEP'] = df_data['No.SEP'].astype(str).str.replace(r'[^a-zA-Z0-9]', '', regex=True).str.strip()
     
-    # Bersihkan nominal
     df_data['Disetujui'] = df_data['Disetujui'].astype(str).str.replace(r'[^0-9]', '', regex=True).str.strip()
     df_data['Disetujui'] = pd.to_numeric(df_data['Disetujui'], errors='coerce').fillna(0).astype(int)
     
-    # Ambil kolom yang dibutuhkan saja
     return df_data[['No.SEP', 'Disetujui']].reset_index(drop=True)
 
 # --- HALAMAN UTAMA ---
@@ -95,7 +92,6 @@ if uploaded_file:
             except Exception as e:
                 st.error(f"Gagal: {e}")
 
-    # --- TAMPILAN INFO HASIL ---
     if 'final_df' in st.session_state:
         st.divider()
         
@@ -114,21 +110,25 @@ if uploaded_file:
         
         st.caption("Cek PDF lu, samain jumlah data & total nominalnya.")
 
-        # --- PERBAIKAN NOMOR URUT DISINI ---
+        # --- PREVIEW DATA DENGAN FORMAT RP & KOLOM NO RAMPING ---
         st.subheader("Preview Data")
         
-        # Buat salinan data untuk preview agar data asli tidak berubah
         df_preview = st.session_state.final_df.copy()
-        
-        # Tambahkan kolom 'No' di posisi pertama (indeks 0) mulai dari 1
         df_preview.insert(0, 'No', range(1, 1 + len(df_preview)))
         
-        # Tampilkan dengan menyembunyikan indeks bawaan Pandas (0,1,2..)
         st.dataframe(
             df_preview, 
             use_container_width=True, 
             height=400, 
-            hide_index=True
+            hide_index=True,
+            column_config={
+                "No": st.column_config.NumberColumn("No", width="small"),
+                "No.SEP": st.column_config.TextColumn("No. SEP"),
+                "Disetujui": st.column_config.NumberColumn(
+                    "Nominal Disetujui",
+                    format="Rp %d"
+                )
+            }
         )
 
         # Download CSV
