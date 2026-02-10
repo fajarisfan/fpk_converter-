@@ -112,9 +112,11 @@ if uploaded_file:
 
       st.subheader("Preview Data")
         
+        # Buat data bayangan untuk preview agar tidak merusak data asli
         df_preview = st.session_state.final_df.copy()
         df_preview.insert(0, 'No', range(1, 1 + len(df_preview)))
         
+        # Tabel dengan kolom No yang kecil dan nominal rapi
         st.dataframe(
             df_preview, 
             use_container_width=True, 
@@ -123,7 +125,7 @@ if uploaded_file:
             column_config={
                 "No": st.column_config.NumberColumn(
                     "No", 
-                    width=40,    # Kolom No mepet kiri dan kecil
+                    width=40,    # Kolom No kecil banget
                 ),
                 "No.SEP": st.column_config.TextColumn(
                     "No. SEP", 
@@ -131,26 +133,24 @@ if uploaded_file:
                 ),
                 "Disetujui": st.column_config.NumberColumn(
                     "Nominal Disetujui",
-                    # Trik format: pakai locale 'en' atau 'id' biar titik ribuan muncul otomatis
-                    format="Rp %d", 
+                    format="Rp %d", # Muncul titik ribuan otomatis
                     width="medium",
                 )
             }
         )
 
-        # Download CSV
-        csv = st.session_state.final_df.to_csv(index=False).encode('utf-8')
+        # Bagian Download
+        csv_data = st.session_state.final_df.to_csv(index=False).encode('utf-8')
         st.download_button(
             label="Download CSV",
-            data=csv,
+            data=csv_data,
             file_name=f"FPK_{datetime.now().strftime('%Y%m%d')}.csv",
             mime="text/csv"
         )
         
+        # Tombol Reset
         if st.button("Reset"):
             for key in ['final_df', 'final_total', 'final_count']:
                 if key in st.session_state:
                     del st.session_state[key]
             st.rerun()
-
-
