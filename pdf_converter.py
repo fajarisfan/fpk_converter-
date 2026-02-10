@@ -100,15 +100,15 @@ if uploaded_file:
 
         st.markdown(f"""
             <div class="info-box">
-                <div class="info-title">JUMLAH DATA BERHASIL DI-CONVERT</div>
+                <div class="info-title">JUMLAH DATA HASIL KONVERSI</div>
                 <div class="info-value">{jumlah_data}</div>
                 <br>
-                <div class="info-title">TOTAL NOMINAL DARI CSV</div>
+                <div class="info-title">TOTAL NOMINAL CSV</div>
                 <div class="info-value">{total_rp}</div>
             </div>
         """, unsafe_allow_html=True)
         
-        st.caption("pastin jumlah data dan nominal sama dengan PDF.")
+        st.caption("pastikan jumlah data dan nominal sama dengan PDF.")
 
         st.subheader("Isi Data")
         
@@ -154,5 +154,6 @@ if uploaded_file:
                 if key in st.session_state:
                     del st.session_state[key]
             st.rerun()
+
 
 
