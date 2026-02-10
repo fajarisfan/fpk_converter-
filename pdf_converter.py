@@ -4,12 +4,13 @@ import streamlit as st
 import tabula
 import tempfile
 import re
+import pdfplumber  # Tambahin ini buat baca teks judul lebih akurat
 from datetime import datetime
 
 # --- KONFIGURASI HALAMAN ---
 st.set_page_config(page_title="FPK Converter", page_icon="🔐", layout="centered")
 
-# --- STYLE CSS (Sama seperti sebelumnya) ---
+# --- STYLE CSS ---
 st.markdown("""<style>
     #MainMenu {visibility: hidden;} footer {visibility: hidden;} header {visibility: hidden;}
     .main-header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 1.5rem; border-radius: 15px; color: white; text-align: center; margin-bottom: 2rem; }
@@ -31,22 +32,30 @@ if not st.session_state.logged_in:
         else: st.error("PIN Salah")
     st.stop()
 
-# --- FUNGSI EKSTRAK NAMA PERIODE DARI PDF ---
+# --- FUNGSI EKSTRAK NAMA PERIODE DARI ISI PDF (VERSI PDFPLUMBER) ---
 def ambil_nama_periode(pdf_path):
     try:
-        # Baca teks mentah dari halaman pertama saja untuk cari periode
-        text_data = tabula.read_pdf(pdf_path, pages=1, area=[0, 0, 50, 100], relative_area=True, pandas_options={'header': None})
-        full_text = " ".join(str(val) for df in text_data for val in df.values.flatten())
-        
-        # Cari pola bulan (Januari-Desember) dan Tahun
-        match = re.search(r'(Januari|Februari|Maret|April|Mei|Juni|Juli|Agustus|September|Oktober|November|Desember)\s+\d{4}', full_text, re.IGNORECASE)
-        if match:
-            return f"FPK_{match.group(0).replace(' ', '_')}"
-        return "Hasil_Konversi_FPK"
-    except:
-        return "Hasil_Konversi_FPK"
+        with pdfplumber.open(pdf_path) as pdf:
+            # Ambil teks dari halaman pertama saja
+            first_page = pdf.pages[0]
+            text = first_page.extract_text()
+            
+            # Cari pola nama bulan dan tahun (Contoh: DESEMBER 2025)
+            # Regex ini nyari kata bulan dan angka 4 digit tahun
+            bulan_pola = r"(JANUARI|FEBRUARI|MARET|APRIL|MEI|JUNI|JULI|AGUSTUS|SEPTEMBER|OKTOBER|NOVEMBER|DESEMBER)"
+            match = re.search(f"{bulan_pola}\s+(\d{{4}})", text, re.IGNORECASE)
+            
+            if match:
+                bulan = match.group(1).upper()
+                tahun = match.group(2)
+                return f"FPK_{bulan}_{tahun}"
+    except Exception as e:
+        print(f"Gagal baca periode: {e}")
+    
+    # Kalau gagal, pake nama file asli tanpa ekstensi
+    return "Hasil_Konversi_FPK"
 
-# --- FUNGSI PROSES DATA ---
+# --- FUNGSI PROSES DATA TABEL ---
 def process_data(pdf_path):
     df_list = tabula.read_pdf(pdf_path, pages='all', multiple_tables=True, lattice=True, pandas_options={'header': None})
     if not df_list: raise ValueError("PDF tidak terbaca.")
@@ -74,19 +83,19 @@ if uploaded_file:
                     tmp.write(uploaded_file.getvalue())
                     tmp_path = tmp.name
                 
-                # 1. Ambil Nama Periode dari isi PDF
-                nama_file_otomatis = ambil_nama_periode(tmp_path)
+                # Ambil Nama dari ISI PDF
+                nama_periode = ambil_nama_periode(tmp_path)
                 
-                # 2. Proses Data Tabel
+                # Proses Tabel
                 df_result = process_data(tmp_path)
                 
                 st.session_state.final_df = df_result
                 st.session_state.final_total = df_result['Disetujui'].sum()
                 st.session_state.final_count = len(df_result)
-                st.session_state.auto_filename = f"{nama_file_otomatis}.csv"
+                st.session_state.auto_filename = f"{nama_periode}.csv"
                 
                 os.unlink(tmp_path)
-                st.success(f"Berhasil! Periode terdeteksi: {nama_file_otomatis.replace('FPK_', '')}")
+                st.success(f"Berhasil! File bakal dinamain: {st.session_state.auto_filename}")
             except Exception as e:
                 st.error(f"Gagal: {e}")
 
@@ -101,10 +110,9 @@ if uploaded_file:
             </div>
         """, unsafe_allow_html=True)
 
-        st.subheader("Cek Dulu Datanya")
+        st.subheader("Preview")
         df_preview = st.session_state.final_df.copy()
         df_preview.insert(0, 'No', range(1, 1 + len(df_preview)))
-        
         st.dataframe(df_preview, use_container_width=True, height=350, hide_index=True,
             column_config={
                 "No": st.column_config.NumberColumn("No", width=40),
@@ -112,16 +120,16 @@ if uploaded_file:
             }
         )
 
-        # DOWNLOAD DENGAN NAMA OTOMATIS DARI ISI PDF
+        # DOWNLOAD DENGAN NAMA YANG SUDAH DIAMBIL DARI ISI PDF
         csv_data = st.session_state.final_df.to_csv(index=False).encode('utf-8')
         st.download_button(
-            label=f"Ambil File {st.session_state.auto_filename}",
+            label="Ambil File CSV",
             data=csv_data,
             file_name=st.session_state.auto_filename,
             mime="text/csv"
         )
         
-        if st.button("Mulai Ulang"):
+        if st.button("Reset"):
             for key in ['final_df', 'final_total', 'final_count', 'auto_filename']:
                 if key in st.session_state: del st.session_state[key]
             st.rerun()
