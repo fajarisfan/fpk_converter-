@@ -110,7 +110,7 @@ if uploaded_file:
         
         st.caption("Cek PDF lu, samain jumlah data & total nominalnya.")
 
-      st.subheader("Preview Data")
+        st.subheader("Preview Data")
         
         # Buat data bayangan untuk preview agar tidak merusak data asli
         df_preview = st.session_state.final_df.copy()
