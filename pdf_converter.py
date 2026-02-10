@@ -77,7 +77,7 @@ uploaded_file = st.file_uploader("Upload PDF FPK", type=['pdf'], label_visibilit
 
 if uploaded_file:
     if st.button("Proses Sekarang"):
-        with st.spinner("Sabar Fan, lagi dihitung..."):
+        with st.spinner("Sedang proses dan akumulasi data..."):
             try:
                 with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as tmp:
                     tmp.write(uploaded_file.getvalue())
@@ -154,4 +154,5 @@ if uploaded_file:
                 if key in st.session_state:
                     del st.session_state[key]
             st.rerun()
+
 
