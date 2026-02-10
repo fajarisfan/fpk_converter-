@@ -13,13 +13,12 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# --- STYLE CSS (FOKUS BIAR KELIHATAN DI HP) ---
+# --- STYLE CSS ---
 st.markdown("""
 <style>
     #MainMenu {visibility: hidden;} footer {visibility: hidden;} header {visibility: hidden;}
     .main-header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 1.5rem; border-radius: 15px; color: white; text-align: center; margin-bottom: 2rem; }
     
-    /* Box Info Nominal & Jumlah Data */
     .info-box {
         background-color: #f0f2f6;
         padding: 20px;
@@ -31,10 +30,13 @@ st.markdown("""
     .info-value { color: #667eea; font-size: 24px; font-weight: 800; }
     
     .stButton>button { width: 100%; border-radius: 10px; height: 50px; font-weight: bold; }
+    
+    /* Bikin tabel lebih ringan diproses browser */
+    .stDataFrame { border-radius: 10px; overflow: hidden; }
 </style>
 """, unsafe_allow_html=True)
 
-# --- LOGIKA LOGIN (Sama Seperti Sebelumnya) ---
+# --- LOGIKA LOGIN ---
 if 'logged_in' not in st.session_state:
     st.session_state.logged_in = False
 
@@ -55,15 +57,20 @@ def process_data(pdf_path):
     if not df_list: raise ValueError("PDF tidak terbaca.")
     
     cleaned_df_list = [df for df in df_list if df.shape[1] >= 6 and len(df) > 1]
+    if not cleaned_df_list: raise ValueError("Data tidak ditemukan dalam format tabel.")
+    
     df = pd.concat(cleaned_df_list, ignore_index=True)
     df_data = df.iloc[:, :6].copy()
     df_data = df_data[pd.to_numeric(df_data.iloc[:, 0], errors='coerce').notna()]
     
     df_data.columns = ['No. Urut', 'No.SEP', 'Tgl. Verifikasi', 'Biaya Riil RS', 'Diajukan', 'Disetujui']
     df_data['No.SEP'] = df_data['No.SEP'].astype(str).str.replace(r'[^a-zA-Z0-9]', '', regex=True).str.strip()
+    
+    # Bersihkan nominal
     df_data['Disetujui'] = df_data['Disetujui'].astype(str).str.replace(r'[^0-9]', '', regex=True).str.strip()
     df_data['Disetujui'] = pd.to_numeric(df_data['Disetujui'], errors='coerce').fillna(0).astype(int)
     
+    # Ambil kolom yang dibutuhkan saja
     return df_data[['No.SEP', 'Disetujui']].reset_index(drop=True)
 
 # --- HALAMAN UTAMA ---
@@ -82,21 +89,19 @@ if uploaded_file:
                 df_result = process_data(tmp_path)
                 st.session_state.final_df = df_result
                 st.session_state.final_total = df_result['Disetujui'].sum()
-                st.session_state.final_count = len(df_result) # Hitung jumlah baris
+                st.session_state.final_count = len(df_result)
                 os.unlink(tmp_path)
                 st.success("Berhasil dikonversi!")
             except Exception as e:
                 st.error(f"Gagal: {e}")
 
-    # --- TAMPILAN INFO HASIL (INI YANG LU MINTA) ---
+    # --- TAMPILAN INFO HASIL ---
     if 'final_df' in st.session_state:
         st.divider()
         
-        # Format Nominal
         total_rp = f"Rp {st.session_state.final_total:,.0f}".replace(",", ".")
         jumlah_data = f"{st.session_state.final_count} Data SEP"
 
-        # Tampilan Box Info (Gue paksa warna teksnya biar kelihatan)
         st.markdown(f"""
             <div class="info-box">
                 <div class="info-title">JUMLAH DATA BERHASIL DI-CONVERT</div>
@@ -109,11 +114,24 @@ if uploaded_file:
         
         st.caption("Cek PDF lu, samain jumlah data & total nominalnya.")
 
-        # Preview Tabel
+        # --- PERBAIKAN NOMOR URUT DISINI ---
         st.subheader("Preview Data")
-        st.dataframe(st.session_state.final_df, use_container_width=True, height=300)
+        
+        # Buat salinan data untuk preview agar data asli tidak berubah
+        df_preview = st.session_state.final_df.copy()
+        
+        # Tambahkan kolom 'No' di posisi pertama (indeks 0) mulai dari 1
+        df_preview.insert(0, 'No', range(1, 1 + len(df_preview)))
+        
+        # Tampilkan dengan menyembunyikan indeks bawaan Pandas (0,1,2..)
+        st.dataframe(
+            df_preview, 
+            use_container_width=True, 
+            height=400, 
+            hide_index=True
+        )
 
-        # Download
+        # Download CSV
         csv = st.session_state.final_df.to_csv(index=False).encode('utf-8')
         st.download_button(
             label="Download CSV",
@@ -123,8 +141,7 @@ if uploaded_file:
         )
         
         if st.button("Reset"):
-            if 'final_df' in st.session_state:
-                del st.session_state.final_df
-                del st.session_state.final_total
-                del st.session_state.final_count
+            for key in ['final_df', 'final_total', 'final_count']:
+                if key in st.session_state:
+                    del st.session_state[key]
             st.rerun()
