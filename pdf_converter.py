@@ -4,27 +4,37 @@ import streamlit as st
 import tabula
 import tempfile
 from datetime import datetime
-import base64
 
 # --- KONFIGURASI HALAMAN ---
 st.set_page_config(
     page_title="FPK Converter",
     page_icon="🔐",
-    layout="centered", # Pakai centered biar fokus di tengah layar HP
+    layout="centered",
     initial_sidebar_state="collapsed"
 )
 
-# --- STYLE CSS ---
+# --- STYLE CSS (FOKUS BIAR KELIHATAN DI HP) ---
 st.markdown("""
 <style>
     #MainMenu {visibility: hidden;} footer {visibility: hidden;} header {visibility: hidden;}
     .main-header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 1.5rem; border-radius: 15px; color: white; text-align: center; margin-bottom: 2rem; }
-    .stMetric { background: #ffffff; padding: 20px; border-radius: 15px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); border-top: 5px solid #667eea; }
+    
+    /* Box Info Nominal & Jumlah Data */
+    .info-box {
+        background-color: #f0f2f6;
+        padding: 20px;
+        border-radius: 15px;
+        border-left: 8px solid #667eea;
+        margin: 10px 0px;
+    }
+    .info-title { color: #1f1f1f; font-size: 14px; font-weight: bold; margin-bottom: 5px; }
+    .info-value { color: #667eea; font-size: 24px; font-weight: 800; }
+    
     .stButton>button { width: 100%; border-radius: 10px; height: 50px; font-weight: bold; }
 </style>
 """, unsafe_allow_html=True)
 
-# --- LOGIKA LOGIN SEDERHANA ---
+# --- LOGIKA LOGIN (Sama Seperti Sebelumnya) ---
 if 'logged_in' not in st.session_state:
     st.session_state.logged_in = False
 
@@ -63,28 +73,41 @@ uploaded_file = st.file_uploader("Upload PDF FPK", type=['pdf'], label_visibilit
 
 if uploaded_file:
     if st.button("Proses Sekarang"):
-        try:
-            with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as tmp:
-                tmp.write(uploaded_file.getvalue())
-                tmp_path = tmp.name
-            
-            # Convert & Hitung
-            df_result = process_data(tmp_path)
-            st.session_state.final_df = df_result
-            st.session_state.final_total = df_result['Disetujui'].sum()
-            os.unlink(tmp_path)
-            st.success("Berhasil dikonversi!")
-        except Exception as e:
-            st.error(f"Gagal: {e}")
+        with st.spinner("Sabar Fan, lagi dihitung..."):
+            try:
+                with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as tmp:
+                    tmp.write(uploaded_file.getvalue())
+                    tmp_path = tmp.name
+                
+                df_result = process_data(tmp_path)
+                st.session_state.final_df = df_result
+                st.session_state.final_total = df_result['Disetujui'].sum()
+                st.session_state.final_count = len(df_result) # Hitung jumlah baris
+                os.unlink(tmp_path)
+                st.success("Berhasil dikonversi!")
+            except Exception as e:
+                st.error(f"Gagal: {e}")
 
-    # Munculin Hasil (Sebelum Download)
+    # --- TAMPILAN INFO HASIL (INI YANG LU MINTA) ---
     if 'final_df' in st.session_state:
         st.divider()
         
-        # Angka Nominal Hasil Convert
+        # Format Nominal
         total_rp = f"Rp {st.session_state.final_total:,.0f}".replace(",", ".")
-        st.metric(label="Total Nominal dari CSV", value=total_rp)
-        st.caption("Samakan angka di atas dengan total yang ada di PDF lu.")
+        jumlah_data = f"{st.session_state.final_count} Data SEP"
+
+        # Tampilan Box Info (Gue paksa warna teksnya biar kelihatan)
+        st.markdown(f"""
+            <div class="info-box">
+                <div class="info-title">JUMLAH DATA BERHASIL DI-CONVERT</div>
+                <div class="info-value">{jumlah_data}</div>
+                <br>
+                <div class="info-title">TOTAL NOMINAL DARI CSV</div>
+                <div class="info-value">{total_rp}</div>
+            </div>
+        """, unsafe_allow_html=True)
+        
+        st.caption("Cek PDF lu, samain jumlah data & total nominalnya.")
 
         # Preview Tabel
         st.subheader("Preview Data")
@@ -100,5 +123,8 @@ if uploaded_file:
         )
         
         if st.button("Reset"):
-            del st.session_state.final_df
+            if 'final_df' in st.session_state:
+                del st.session_state.final_df
+                del st.session_state.final_total
+                del st.session_state.final_count
             st.rerun()
