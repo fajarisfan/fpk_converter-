@@ -110,9 +110,7 @@ if uploaded_file:
         
         st.caption("Cek PDF lu, samain jumlah data & total nominalnya.")
 
-        # --- PREVIEW DATA DENGAN FORMAT RP & KOLOM NO RAMPING ---
-       # --- PREVIEW DATA (FIXED: NO KECIL & NOMINAL RAPI) ---
-        st.subheader("Preview Data")
+      st.subheader("Preview Data")
         
         df_preview = st.session_state.final_df.copy()
         df_preview.insert(0, 'No', range(1, 1 + len(df_preview)))
@@ -125,8 +123,7 @@ if uploaded_file:
             column_config={
                 "No": st.column_config.NumberColumn(
                     "No", 
-                    width=40,  # Gua kunci di 40 pixel biar kecil bgt
-                    help="Nomor Urut"
+                    width=40,    # Kolom No mepet kiri dan kecil
                 ),
                 "No.SEP": st.column_config.TextColumn(
                     "No. SEP", 
@@ -134,8 +131,9 @@ if uploaded_file:
                 ),
                 "Disetujui": st.column_config.NumberColumn(
                     "Nominal Disetujui",
-                    format="Rp %d", # Format Rp dengan pemisah ribuan titik
-                    width="medium"
+                    # Trik format: pakai locale 'en' atau 'id' biar titik ribuan muncul otomatis
+                    format="Rp %d", 
+                    width="medium",
                 )
             }
         )
@@ -154,4 +152,5 @@ if uploaded_file:
                 if key in st.session_state:
                     del st.session_state[key]
             st.rerun()
+
 
