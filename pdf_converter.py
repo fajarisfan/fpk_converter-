@@ -108,9 +108,9 @@ if uploaded_file:
             </div>
         """, unsafe_allow_html=True)
         
-        st.caption("Cek PDF lu, samain jumlah data & total nominalnya.")
+        st.caption("pastin jumlah data dan nominal sama dengan PDF.")
 
-        st.subheader("Preview Data")
+        st.subheader("Isi Data")
         
         # Buat data bayangan untuk preview agar tidak merusak data asli
         df_preview = st.session_state.final_df.copy()
@@ -154,3 +154,4 @@ if uploaded_file:
                 if key in st.session_state:
                     del st.session_state[key]
             st.rerun()
+
