@@ -28,11 +28,23 @@ st.markdown("""
 
 DEFAULT_PIN = "1234"
 
-# --- FUNGSI TAMPILKAN PDF ---
+# --- FUNGSI TAMPILKAN PDF (VERSI HP FRIENDLY) ---
 def display_pdf(file_bytes):
     base64_pdf = base64.b64encode(file_bytes).decode('utf-8')
-    # Ditambahin ID unik biar ga conflict sama proses rerun
-    pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="800" style="border:none;"></iframe>'
+    
+    # Pake tag <object> sebagai alternatif <iframe> buat browser HP
+    pdf_display = f"""
+        <object data="data:application/pdf;base64,{base64_pdf}" type="application/pdf" width="100%" height="600px">
+            <div style="background:#fff3cd; padding:20px; border-radius:10px; border:1px solid #ffeeba;">
+                <p>⚠️ <b>Waduh, HP lu nggak dukung pratinjau langsung.</b></p>
+                <p>Tapi tenang, lu tetep bisa proses filenya kok. Kalau mau liat aslinya, klik tombol di bawah ini:</p>
+                <a href="data:application/pdf;base64,{base64_pdf}" download="cek_pdf_asli.pdf" 
+                   style="background:#667eea; color:white; padding:10px 20px; text-decoration:none; border-radius:5px; display:inline-block;">
+                   Buka PDF Manual
+                </a>
+            </div>
+        </object>
+    """
     st.markdown(pdf_display, unsafe_allow_html=True)
 
 # --- FUNGSI PROSES CONVERT ---
@@ -137,3 +149,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
