@@ -1,569 +1,458 @@
-import streamlit as st
+import os
 import pandas as pd
-import io
+import streamlit as st
+import tabula
+import tempfile
+import re
+import pdfplumber
+from datetime import datetime
 
-# ─── PAGE CONFIG ─────────────────────────────────────────────────────────────
-st.set_page_config(
-    page_title="FPK Converter + Audit Jaspel ICHA",
-    page_icon="🏥",
-    layout="wide",
-)
+# --- KONFIGURASI HALAMAN ---
+st.set_page_config(page_title="FPK Converter", page_icon="⚡", layout="centered")
 
-# ─── AUTH ─────────────────────────────────────────────────────────────────────
-if "auth" not in st.session_state:
-    st.session_state.auth = False
+# --- STYLE CSS MODERN ---
+st.markdown("""
+<style>
+    @import url('https://fonts.googleapis.com/css2?family=Sora:wght@300;400;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap');
 
-if not st.session_state.auth:
-    st.markdown("## 🔐 Login")
-    pin = st.text_input("Masukkan PIN:", type="password")
-    if st.button("Login"):
-        if pin == "1234":
-            st.session_state.auth = True
-            st.rerun()
-        else:
-            st.error("PIN salah!")
-    st.stop()
+    * { font-family: 'Sora', sans-serif !important; }
+    
+    #MainMenu {visibility: hidden;} 
+    footer {visibility: hidden;} 
+    header {visibility: hidden;}
+    
+    /* Background */
+    .stApp {
+        background-color: #0a0a0f;
+        background-image: 
+            radial-gradient(ellipse 80% 50% at 50% -20%, rgba(99, 102, 241, 0.15), transparent),
+            radial-gradient(ellipse 40% 40% at 80% 80%, rgba(139, 92, 246, 0.08), transparent);
+    }
+    
+    /* Sembunyiin semua elemen default streamlit yg ga perlu */
+    .block-container { padding-top: 2rem; max-width: 680px; }
 
-# ─── HELPERS ──────────────────────────────────────────────────────────────────
-def fmt_rp(n):
-    if n is None:
-        return "—"
-    return f"Rp {n:,.0f}".replace(",", ".")
-
-def load_csv(uploaded_file):
-    """Load CSV dan normalize kolom No.SEP + Disetujui"""
-    try:
-        df = pd.read_csv(uploaded_file)
-    except Exception as e:
-        return None, f"Error membaca file: {e}"
-
-    # Normalize nama kolom
-    df.columns = df.columns.str.strip()
-
-    # Cari kolom No.SEP
-    sep_col = None
-    for c in df.columns:
-        if "SEP" in c.upper() or "NO" in c.upper():
-            sep_col = c
-            break
-
-    # Cari kolom Disetujui
-    dis_col = None
-    for c in df.columns:
-        if "DISETUJUI" in c.upper() or "SETUJU" in c.upper():
-            dis_col = c
-            break
-
-    if sep_col is None or dis_col is None:
-        return None, f"Kolom tidak ditemukan. Kolom yang ada: {list(df.columns)}\n\nCSV harus punya kolom: No.SEP dan Disetujui"
-
-    df = df[[sep_col, dis_col]].copy()
-    df.columns = ["No.SEP", "Disetujui"]
-    df["Disetujui"] = pd.to_numeric(df["Disetujui"].astype(str).str.replace(",", "").str.replace(".", ""), errors="coerce").fillna(0).astype(int)
-    df = df[df["Disetujui"] > 0].reset_index(drop=True)
-
-    return df, None
-
-# ─── TARIF BPJS ───────────────────────────────────────────────────────────────
-TARIF = {
-    "Rawat Inap (RITL)": 0.30,
-    "Rawat Jalan (RJTL)": 0.35,
-    "Rawat Jalan Rehabilitasi Medik": 0.45,
-    "Rawat Jalan Hemodialisa": 0.30,
-    "IGD": 0.35,
-}
-
-# ─── KANTONG BESAR ────────────────────────────────────────────────────────────
-KANTONG_RI = {
-    "dr. Operator & dr. Spesialis": 34.3,
-    "dr. Umum": 6.1,
-    "Perawat": 25.5,
-    "Management Struktural": 14.8,
-    "Petugas Khusus": 8.9,
-    "Farmasi": 1.6,
-    "Management Administrasi": 8.8,
-}
-KANTONG_RJ = {
-    "dr. Operator & dr. Spesialis": 50.4,
-    "dr. Umum": 2.0,
-    "Perawat": 15.0,
-    "Management Struktural": 11.0,
-    "Petugas Khusus": 9.0,
-    "Farmasi": 4.0,
-    "Management Administrasi": 8.6,
-}
-
-def hitung_jaspel(total_cbg, tarif_pct, total_billing, naik_kelas=0):
-    jasa_pelayanan = total_cbg * tarif_pct
-    selisih_cbg = total_cbg - total_billing
-    jaspel_selisih = max(0, selisih_cbg) * 0.05
-    jaspel_total = jasa_pelayanan + jaspel_selisih + naik_kelas
-    jaspel_final = jaspel_total  # Pembayaran % = 100% diasumsikan
-    return {
-        "jasa_pelayanan": jasa_pelayanan,
-        "selisih_cbg": selisih_cbg,
-        "jaspel_selisih": jaspel_selisih,
-        "naik_kelas": naik_kelas,
-        "jaspel_total": jaspel_total,
-        "jaspel_final": jaspel_final,
+    /* HEADER */
+    .app-header {
+        text-align: center;
+        padding: 3rem 2rem 2rem;
+        margin-bottom: 0.5rem;
+    }
+    .app-header .badge {
+        display: inline-block;
+        background: rgba(99, 102, 241, 0.15);
+        border: 1px solid rgba(99, 102, 241, 0.3);
+        color: #818cf8;
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 2px;
+        text-transform: uppercase;
+        padding: 6px 16px;
+        border-radius: 100px;
+        margin-bottom: 1.2rem;
+    }
+    .app-header h1 {
+        font-size: 3rem !important;
+        font-weight: 800 !important;
+        color: #f1f5f9 !important;
+        line-height: 1.1 !important;
+        margin: 0 !important;
+        letter-spacing: -1.5px;
+    }
+    .app-header h1 span {
+        background: linear-gradient(135deg, #6366f1, #a78bfa);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+    }
+    .app-header p {
+        color: #64748b;
+        font-size: 0.95rem;
+        margin-top: 0.8rem;
+        font-weight: 300;
     }
 
-# ─── TABS ─────────────────────────────────────────────────────────────────────
-tab1, tab2 = st.tabs(["⚡ FPK Converter", "🔍 Audit Jaspel"])
+    /* LOGIN BOX */
+    .login-container {
+        background: rgba(255,255,255,0.03);
+        border: 1px solid rgba(255,255,255,0.07);
+        border-radius: 20px;
+        padding: 2.5rem;
+        backdrop-filter: blur(10px);
+        margin-top: 1rem;
+    }
+    
+    /* UPLOAD AREA */
+    .upload-zone {
+        background: rgba(255,255,255,0.02);
+        border: 1.5px dashed rgba(99, 102, 241, 0.35);
+        border-radius: 20px;
+        padding: 2rem;
+        transition: all 0.3s;
+        margin-bottom: 1rem;
+    }
+    .upload-zone:hover {
+        border-color: rgba(99, 102, 241, 0.7);
+        background: rgba(99, 102, 241, 0.05);
+    }
 
-# ══════════════════════════════════════════════════════════════════════════════
-# TAB 1 — FPK CONVERTER
-# ══════════════════════════════════════════════════════════════════════════════
-with tab1:
-    st.markdown("## ⚡ FPK Converter")
-    st.markdown("Upload PDF FPK → ekstrak **No.SEP** + **Disetujui** → download CSV")
+    /* INPUT FIELDS */
+    .stTextInput > div > div > input {
+        background: rgba(255,255,255,0.04) !important;
+        border: 1px solid rgba(255,255,255,0.1) !important;
+        border-radius: 12px !important;
+        color: #f1f5f9 !important;
+        padding: 14px 18px !important;
+        font-size: 0.95rem !important;
+        font-family: 'JetBrains Mono', monospace !important;
+        letter-spacing: 4px !important;
+        transition: all 0.2s !important;
+    }
+    .stTextInput > div > div > input:focus {
+        border-color: rgba(99, 102, 241, 0.6) !important;
+        box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1) !important;
+        background: rgba(99, 102, 241, 0.05) !important;
+    }
+    .stTextInput label {
+        color: #94a3b8 !important;
+        font-size: 0.8rem !important;
+        font-weight: 600 !important;
+        letter-spacing: 1px !important;
+        text-transform: uppercase !important;
+    }
 
-    st.info("💡 Fitur konversi PDF membutuhkan file PDF FPK dari BPJS Kesehatan (format Rincian Data Hasil Verifikasi)")
+    /* FILE UPLOADER */
+    .stFileUploader > div {
+        background: rgba(255,255,255,0.02) !important;
+        border: 1.5px dashed rgba(99, 102, 241, 0.35) !important;
+        border-radius: 16px !important;
+        padding: 1.5rem !important;
+        transition: all 0.3s !important;
+    }
+    .stFileUploader > div:hover {
+        border-color: rgba(99, 102, 241, 0.7) !important;
+        background: rgba(99, 102, 241, 0.05) !important;
+    }
+    .stFileUploader label {
+        color: #94a3b8 !important;
+    }
+    [data-testid="stFileUploaderDropzoneInstructions"] {
+        color: #64748b !important;
+    }
+    [data-testid="stFileUploaderDropzoneInstructions"] span {
+        color: #818cf8 !important;
+        font-weight: 600 !important;
+    }
 
-    uploaded_pdf = st.file_uploader("Upload PDF FPK", type=["pdf"], key="fpk_pdf")
+    /* BUTTONS */
+    .stButton > button {
+        background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%) !important;
+        color: white !important;
+        border: none !important;
+        border-radius: 12px !important;
+        height: 52px !important;
+        font-size: 0.9rem !important;
+        font-weight: 700 !important;
+        letter-spacing: 0.5px !important;
+        transition: all 0.2s ease !important;
+        box-shadow: 0 4px 20px rgba(99, 102, 241, 0.25) !important;
+    }
+    .stButton > button:hover {
+        transform: translateY(-2px) !important;
+        box-shadow: 0 8px 30px rgba(99, 102, 241, 0.4) !important;
+        filter: brightness(1.1) !important;
+    }
+    .stButton > button:active {
+        transform: translateY(0) !important;
+    }
 
-    if uploaded_pdf:
-        try:
-            import pdfplumber
-            rows = []
-            with pdfplumber.open(uploaded_pdf) as pdf:
-                for page in pdf.pages:
-                    tables = page.extract_tables()
-                    for table in tables:
-                        for row in table:
-                            if row and len(row) >= 5:
-                                try:
-                                    no = row[0]
-                                    if no and str(no).strip().isdigit():
-                                        sep = str(row[1]).strip()
-                                        disetujui_raw = str(row[4]).strip().replace(",", "").replace(".", "")
-                                        if sep.startswith("1028") and disetujui_raw.isdigit():
-                                            rows.append({"No.SEP": sep, "Disetujui": int(disetujui_raw)})
-                                except:
-                                    pass
+    /* RESET BUTTON - khusus */
+    .reset-btn > button {
+        background: transparent !important;
+        border: 1px solid rgba(255,255,255,0.1) !important;
+        color: #64748b !important;
+        box-shadow: none !important;
+    }
+    .reset-btn > button:hover {
+        background: rgba(255,255,255,0.05) !important;
+        color: #94a3b8 !important;
+        transform: none !important;
+        box-shadow: none !important;
+    }
 
-            if rows:
-                df_out = pd.DataFrame(rows)
-                st.success(f"✅ {len(df_out)} SEP berhasil diekstrak")
-                st.dataframe(df_out.head(20), use_container_width=True)
+    /* DOWNLOAD BUTTON */
+    .stDownloadButton > button {
+        background: rgba(16, 185, 129, 0.1) !important;
+        border: 1px solid rgba(16, 185, 129, 0.3) !important;
+        color: #34d399 !important;
+        box-shadow: 0 4px 20px rgba(16, 185, 129, 0.1) !important;
+    }
+    .stDownloadButton > button:hover {
+        background: rgba(16, 185, 129, 0.2) !important;
+        border-color: rgba(16, 185, 129, 0.5) !important;
+        box-shadow: 0 8px 30px rgba(16, 185, 129, 0.2) !important;
+        color: #6ee7b7 !important;
+    }
 
-                csv_bytes = df_out.to_csv(index=False).encode("utf-8")
-                st.download_button(
-                    "⬇️ Download CSV",
-                    data=csv_bytes,
-                    file_name=f"FPK_{uploaded_pdf.name.replace('.pdf','')}.csv",
-                    mime="text/csv",
-                )
-            else:
-                st.warning("Tidak ada data SEP yang ditemukan di PDF ini.")
-        except ImportError:
-            st.error("Library pdfplumber belum tersedia. Install dengan: pip install pdfplumber")
-        except Exception as e:
-            st.error(f"Error: {e}")
+    /* STATS CARDS */
+    .stats-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 1rem;
+        margin: 1.5rem 0;
+    }
+    .stat-card {
+        background: rgba(255,255,255,0.03);
+        border: 1px solid rgba(255,255,255,0.07);
+        border-radius: 16px;
+        padding: 1.5rem;
+        position: relative;
+        overflow: hidden;
+        transition: all 0.2s;
+    }
+    .stat-card::before {
+        content: '';
+        position: absolute;
+        top: 0; left: 0; right: 0;
+        height: 2px;
+        background: linear-gradient(90deg, #6366f1, #8b5cf6);
+    }
+    .stat-card:last-child::before {
+        background: linear-gradient(90deg, #10b981, #34d399);
+    }
+    .stat-label {
+        color: #475569;
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 2px;
+        text-transform: uppercase;
+        margin-bottom: 0.5rem;
+    }
+    .stat-value {
+        color: #f1f5f9;
+        font-size: 1.6rem;
+        font-weight: 800;
+        letter-spacing: -0.5px;
+        line-height: 1;
+    }
+    .stat-value.green { color: #34d399; }
+    .stat-sub {
+        color: #334155;
+        font-size: 0.75rem;
+        margin-top: 0.4rem;
+        font-family: 'JetBrains Mono', monospace !important;
+    }
 
-# ══════════════════════════════════════════════════════════════════════════════
-# TAB 2 — AUDIT JASPEL
-# ══════════════════════════════════════════════════════════════════════════════
-with tab2:
-    st.markdown("## 🔍 Audit Jaspel")
-    st.markdown("Verifikasi perhitungan Jasa Pelayanan berdasarkan Dokumentasi Modul Jaspel SIMRS ICHA")
+    /* SUCCESS & ERROR MSGS */
+    .stSuccess {
+        background: rgba(16, 185, 129, 0.08) !important;
+        border: 1px solid rgba(16, 185, 129, 0.2) !important;
+        border-radius: 12px !important;
+        color: #34d399 !important;
+    }
+    .stError {
+        background: rgba(239, 68, 68, 0.08) !important;
+        border: 1px solid rgba(239, 68, 68, 0.2) !important;
+        border-radius: 12px !important;
+    }
 
-    sub1, sub2, sub3, sub4 = st.tabs(["🏥 Audit BPJS", "🏪 Audit Non BPJS", "🧮 Simulasi Manual", "📋 Master Jaspel"])
+    /* SPINNER */
+    .stSpinner > div {
+        border-top-color: #6366f1 !important;
+    }
 
-    # ─────────────────────────────────────────────────────────────────────────
-    # SUB-TAB 1: AUDIT BPJS
-    # ─────────────────────────────────────────────────────────────────────────
-    with sub1:
-        st.markdown("### 🏥 Audit Jaspel BPJS")
-        st.caption("Upload CSV tagihan BPJS → sistem hitung ulang & bandingkan dengan nilai di ICHA.")
+    /* DIVIDER */
+    hr {
+        border-color: rgba(255,255,255,0.06) !important;
+        margin: 1.5rem 0 !important;
+    }
 
-        col_ri, col_rj = st.columns(2)
+    /* DATAFRAME */
+    .stDataFrame {
+        border-radius: 14px !important;
+        overflow: hidden !important;
+        border: 1px solid rgba(255,255,255,0.07) !important;
+    }
+    [data-testid="stDataFrameResizable"] {
+        background: rgba(255,255,255,0.02) !important;
+    }
 
-        # ── RI ──────────────────────────────────────────────
-        with col_ri:
-            st.markdown("#### 🏥 Rawat Inap (RI)")
+    /* SUBHEADER */
+    .stSubheader, h3 {
+        color: #94a3b8 !important;
+        font-size: 0.8rem !important;
+        font-weight: 700 !important;
+        letter-spacing: 2px !important;
+        text-transform: uppercase !important;
+    }
 
-            # Upload CSV RI
-            csv_ri = st.file_uploader(
-                "Upload CSV BPJS RI",
-                type=["csv"],
-                key="csv_ri",
-                help="Format: No.SEP, Disetujui"
-            )
+    /* SUCCESS BADGE */
+    .file-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        background: rgba(16, 185, 129, 0.08);
+        border: 1px solid rgba(16, 185, 129, 0.2);
+        color: #34d399;
+        padding: 8px 16px;
+        border-radius: 100px;
+        font-size: 0.8rem;
+        font-weight: 600;
+        font-family: 'JetBrains Mono', monospace;
+        margin: 0.5rem 0;
+    }
+</style>
+""", unsafe_allow_html=True)
 
-            df_ri = None
-            if csv_ri:
-                df_ri, err_ri = load_csv(csv_ri)
-                if err_ri:
-                    st.error(f"❌ {err_ri}")
-                else:
-                    total_cbg_ri = df_ri["Disetujui"].sum()
-                    st.success(f"✅ {len(df_ri):,} SEP | Total CBG: {fmt_rp(total_cbg_ri)}")
-            else:
-                st.info("👆 Upload CSV RI (kolom: No.SEP, Disetujui)")
 
-            # Parameter RI
-            jenis_ri = st.selectbox("Jenis Rawat RI", list(TARIF.keys()), index=0, key="jenis_ri")
-            tarif_ri = TARIF[jenis_ri]
+# --- LOGIKA LOGIN ---
+if 'logged_in' not in st.session_state:
+    st.session_state.logged_in = False
 
-            billing_ri = st.number_input(
-                "Total Biaya Riil RS / Total Billing RI (Rp)",
-                min_value=0,
-                value=3490013065,
-                step=1000000,
-                key="billing_ri",
-                help="Dari PDF Rekap FPK RI: 3,490,013,065"
-            )
-            st.caption(f"📄 Dari PDF Jan 2026: Rp 3.490.013.065")
+if not st.session_state.logged_in:
+    st.markdown("""
+        <div class="app-header">
+            <div class="badge">⚡ FPK Converter</div>
+            <h1>Selamat <span>Datang</span></h1>
+            <p>Masukkan PIN untuk mengakses aplikasi</p>
+        </div>
+    """, unsafe_allow_html=True)
 
-            naik_kelas_ri = st.number_input("Jaspel Naik Kelas RI (Rp)", min_value=0, value=0, step=100000, key="naik_ri")
-            icha_ri = st.number_input("Nilai Jaspel di ICHA RI (Rp) — untuk perbandingan", min_value=0, value=0, step=100000, key="icha_ri")
-
-        # ── RJ ──────────────────────────────────────────────
-        with col_rj:
-            st.markdown("#### 🏪 Rawat Jalan (RJ)")
-
-            csv_rj = st.file_uploader(
-                "Upload CSV BPJS RJ",
-                type=["csv"],
-                key="csv_rj",
-                help="Format: No.SEP, Disetujui"
-            )
-
-            df_rj = None
-            if csv_rj:
-                df_rj, err_rj = load_csv(csv_rj)
-                if err_rj:
-                    st.error(f"❌ {err_rj}")
-                else:
-                    total_cbg_rj = df_rj["Disetujui"].sum()
-                    st.success(f"✅ {len(df_rj):,} SEP | Total CBG: {fmt_rp(total_cbg_rj)}")
-            else:
-                st.info("👆 Upload CSV RJ (kolom: No.SEP, Disetujui)")
-
-            jenis_rj = st.selectbox("Jenis Rawat RJ", list(TARIF.keys()), index=1, key="jenis_rj")
-            tarif_rj = TARIF[jenis_rj]
-
-            billing_rj = st.number_input(
-                "Total Biaya Riil RS / Total Billing RJ (Rp)",
-                min_value=0,
-                value=0,
-                step=1000000,
-                key="billing_rj",
-                help="Isi dari Rekap FPK RJ"
-            )
-
-            naik_kelas_rj = st.number_input("Jaspel Naik Kelas RJ (Rp)", min_value=0, value=0, step=100000, key="naik_rj")
-            icha_rj = st.number_input("Nilai Jaspel di ICHA RJ (Rp) — untuk perbandingan", min_value=0, value=0, step=100000, key="icha_rj")
-
-        # ── HASIL ─────────────────────────────────────────────
-        st.markdown("---")
-        hitung = st.button("🧮 Hitung Jaspel BPJS", type="primary", use_container_width=True)
-
-        if hitung or df_ri is not None or df_rj is not None:
-            if df_ri is None and df_rj is None:
-                st.warning("⚠️ Upload minimal satu CSV (RI atau RJ) terlebih dahulu.")
-            else:
-                hasil_ri = None
-                hasil_rj = None
-
-                if df_ri is not None:
-                    total_cbg_ri = df_ri["Disetujui"].sum()
-                    hasil_ri = hitung_jaspel(total_cbg_ri, tarif_ri, billing_ri, naik_kelas_ri)
-
-                if df_rj is not None:
-                    total_cbg_rj = df_rj["Disetujui"].sum()
-                    hasil_rj = hitung_jaspel(total_cbg_rj, tarif_rj, billing_rj, naik_kelas_rj)
-
-                # ── SUMMARY CARDS ──
-                total_jaspel_final = (hasil_ri["jaspel_final"] if hasil_ri else 0) + (hasil_rj["jaspel_final"] if hasil_rj else 0)
-                total_icha = (icha_ri if icha_ri > 0 else 0) + (icha_rj if icha_rj > 0 else 0)
-
-                c1, c2, c3, c4 = st.columns(4)
-                with c1:
-                    st.metric("📋 SEP RI", f"{len(df_ri):,}" if df_ri is not None else "—")
-                with c2:
-                    st.metric("📋 SEP RJ", f"{len(df_rj):,}" if df_rj is not None else "—")
-                with c3:
-                    st.metric("💰 Total Jaspel Final (Hitung)", fmt_rp(total_jaspel_final))
-                with c4:
-                    if total_icha > 0:
-                        selisih = total_jaspel_final - total_icha
-                        st.metric("⚖️ Selisih vs ICHA", fmt_rp(selisih), delta=f"{selisih/total_icha*100:.2f}%" if total_icha else None)
-                    else:
-                        st.metric("📊 ICHA (belum diisi)", "—")
-
-                # ── DETAIL RI ──
-                if hasil_ri:
-                    st.markdown("#### 📊 Detail Perhitungan — Rawat Inap (RI)")
-                    total_cbg_ri = df_ri["Disetujui"].sum()
-
-                    col_a, col_b = st.columns(2)
-                    with col_a:
-                        data_ri = {
-                            "Komponen": [
-                                "Jumlah SEP",
-                                f"Total Klaim INA CBGs",
-                                f"Total Biaya Riil RS",
-                                f"Tarif BPJS ({jenis_ri})",
-                                "Jasa Pelayanan (CBG × Tarif)",
-                                "Selisih INA CBGs (CBG − Billing)",
-                                "Jaspel Selisih (× 5%)",
-                                "Jaspel Naik Kelas",
-                                "🟣 Jaspel Total",
-                                "✅ Jaspel Final",
-                            ],
-                            "Nilai": [
-                                f"{len(df_ri):,} SEP",
-                                fmt_rp(total_cbg_ri),
-                                fmt_rp(billing_ri),
-                                f"{tarif_ri*100:.0f}%",
-                                fmt_rp(hasil_ri["jasa_pelayanan"]),
-                                fmt_rp(hasil_ri["selisih_cbg"]),
-                                fmt_rp(hasil_ri["jaspel_selisih"]),
-                                fmt_rp(hasil_ri["naik_kelas"]),
-                                fmt_rp(hasil_ri["jaspel_total"]),
-                                fmt_rp(hasil_ri["jaspel_final"]),
-                            ]
-                        }
-                        st.dataframe(pd.DataFrame(data_ri), use_container_width=True, hide_index=True)
-
-                        if hasil_ri["selisih_cbg"] <= 0:
-                            st.info(f"ℹ️ Selisih CBG = {fmt_rp(hasil_ri['selisih_cbg'])} (NEGATIF) → Jaspel Selisih = Rp 0")
-                        else:
-                            st.success(f"✅ Selisih CBG POSITIF = {fmt_rp(hasil_ri['selisih_cbg'])} → Jaspel Selisih = {fmt_rp(hasil_ri['jaspel_selisih'])}")
-
-                    with col_b:
-                        if icha_ri > 0:
-                            selisih_ri = hasil_ri["jaspel_final"] - icha_ri
-                            st.markdown("**⚖️ Perbandingan vs ICHA**")
-                            st.dataframe(pd.DataFrame({
-                                "": ["Hitung Manual", "Sistem ICHA", "Selisih"],
-                                "Nilai": [fmt_rp(hasil_ri["jaspel_final"]), fmt_rp(icha_ri), fmt_rp(selisih_ri)]
-                            }), use_container_width=True, hide_index=True)
-                            if abs(selisih_ri) < 1000:
-                                st.success("✅ COCOK dengan ICHA!")
-                            else:
-                                st.warning(f"⚠️ Selisih {fmt_rp(selisih_ri)} — periksa data Non-BPJS, IGD, atau naik kelas")
-
-                        # Kantong Besar Estimasi RI
-                        st.markdown("**📊 Estimasi Kantong Besar RI**")
-                        kb_data = []
-                        for nama, pct in KANTONG_RI.items():
-                            kb_data.append({"Jenis": nama, "%": f"{pct:.1f}%", "Estimasi": fmt_rp(hasil_ri["jaspel_final"] * pct / 100)})
-                        st.dataframe(pd.DataFrame(kb_data), use_container_width=True, hide_index=True)
-                        st.caption("*Estimasi distribusi berdasarkan rata-rata RS umum. Nilai aktual dari SIMRS ICHA.")
-
-                # ── DETAIL RJ ──
-                if hasil_rj:
-                    st.markdown("#### 📊 Detail Perhitungan — Rawat Jalan (RJ)")
-                    total_cbg_rj = df_rj["Disetujui"].sum()
-
-                    col_c, col_d = st.columns(2)
-                    with col_c:
-                        data_rj = {
-                            "Komponen": [
-                                "Jumlah SEP",
-                                "Total Klaim INA CBGs",
-                                "Total Biaya Riil RS",
-                                f"Tarif BPJS ({jenis_rj})",
-                                "Jasa Pelayanan (CBG × Tarif)",
-                                "Selisih INA CBGs (CBG − Billing)",
-                                "Jaspel Selisih (× 5%)",
-                                "Jaspel Naik Kelas",
-                                "🟣 Jaspel Total",
-                                "✅ Jaspel Final",
-                            ],
-                            "Nilai": [
-                                f"{len(df_rj):,} SEP",
-                                fmt_rp(total_cbg_rj),
-                                fmt_rp(billing_rj) if billing_rj > 0 else "Belum diisi",
-                                f"{tarif_rj*100:.0f}%",
-                                fmt_rp(hasil_rj["jasa_pelayanan"]),
-                                fmt_rp(hasil_rj["selisih_cbg"]) if billing_rj > 0 else "—",
-                                fmt_rp(hasil_rj["jaspel_selisih"]) if billing_rj > 0 else "—",
-                                fmt_rp(hasil_rj["naik_kelas"]),
-                                fmt_rp(hasil_rj["jaspel_total"]),
-                                fmt_rp(hasil_rj["jaspel_final"]),
-                            ]
-                        }
-                        st.dataframe(pd.DataFrame(data_rj), use_container_width=True, hide_index=True)
-
-                        if billing_rj == 0:
-                            st.info("ℹ️ Total Billing RJ belum diisi — Jaspel Selisih tidak dihitung. Isi dari PDF Rekap FPK RJ.")
-
-                    with col_d:
-                        if icha_rj > 0:
-                            selisih_rj = hasil_rj["jaspel_final"] - icha_rj
-                            st.markdown("**⚖️ Perbandingan vs ICHA**")
-                            st.dataframe(pd.DataFrame({
-                                "": ["Hitung Manual", "Sistem ICHA", "Selisih"],
-                                "Nilai": [fmt_rp(hasil_rj["jaspel_final"]), fmt_rp(icha_rj), fmt_rp(selisih_rj)]
-                            }), use_container_width=True, hide_index=True)
-
-                        # Kantong Besar Estimasi RJ
-                        st.markdown("**📊 Estimasi Kantong Besar RJ**")
-                        kb_data_rj = []
-                        for nama, pct in KANTONG_RJ.items():
-                            kb_data_rj.append({"Jenis": nama, "%": f"{pct:.1f}%", "Estimasi": fmt_rp(hasil_rj["jaspel_final"] * pct / 100)})
-                        st.dataframe(pd.DataFrame(kb_data_rj), use_container_width=True, hide_index=True)
-                        st.caption("*Estimasi distribusi berdasarkan rata-rata RS umum. Nilai aktual dari SIMRS ICHA.")
-
-                # ── REKAP GABUNGAN ──
-                if hasil_ri and hasil_rj:
-                    st.markdown("---")
-                    st.markdown("#### 📊 Rekap Gabungan RI + RJ")
-                    gabungan = pd.DataFrame({
-                        "Jenis": ["Rawat Inap (RI)", "Rawat Jalan (RJ)", "TOTAL"],
-                        "Jumlah SEP": [f"{len(df_ri):,}", f"{len(df_rj):,}", f"{len(df_ri)+len(df_rj):,}"],
-                        "Total CBG": [fmt_rp(df_ri['Disetujui'].sum()), fmt_rp(df_rj['Disetujui'].sum()), fmt_rp(df_ri['Disetujui'].sum()+df_rj['Disetujui'].sum())],
-                        "Tarif": [f"{tarif_ri*100:.0f}%", f"{tarif_rj*100:.0f}%", "—"],
-                        "Jaspel Final": [fmt_rp(hasil_ri["jaspel_final"]), fmt_rp(hasil_rj["jaspel_final"]), fmt_rp(total_jaspel_final)],
-                    })
-                    st.dataframe(gabungan, use_container_width=True, hide_index=True)
-
-                    if total_icha > 0:
-                        selisih_total = total_jaspel_final - total_icha
-                        col_x, col_y = st.columns(2)
-                        with col_x:
-                            st.metric("💰 Total Jaspel Hitung", fmt_rp(total_jaspel_final))
-                        with col_y:
-                            st.metric("🏥 Total ICHA", fmt_rp(total_icha), delta=fmt_rp(selisih_total))
-                        if abs(selisih_total) > 0:
-                            st.info(f"💡 Selisih {fmt_rp(selisih_total)} kemungkinan dari: Non-BPJS, IGD, naik kelas, atau tarif RJ khusus (Rehab Medik 45%, HD 30%)")
-
-                # ── FORMULA LENGKAP ──
-                with st.expander("📋 Rumus Perhitungan ICHA (klik untuk lihat)"):
-                    st.code("""
-BPJS — Formula SIMRS ICHA:
-
-Tarif:
-  Rawat Jalan Rehabilitasi Medik = 45%
-  Rawat Jalan Hemodialisa        = 30%
-  Rawat Jalan (lainnya)          = 35%
-  Rawat Inap                     = 30%
-  IGD                            = 35%
-
-Jasa Pelayanan   = Klaim INA CBGs × Tarif
-Selisih CBGs     = Klaim INA CBGs − Total Biaya Riil RS
-Jaspel Selisih   = max(0, Selisih CBGs) × 5%
-Jaspel Naik Kelas = dari pasien BPJS naik kelas (input manual)
-
-Jaspel Total     = Jasa Pelayanan + Jaspel Selisih + Jaspel Naik Kelas
-Pembayaran %     = (Pembayaran / Total Billing) × 100
-Jaspel Final     = Jaspel Total × Pembayaran %
-                    """, language="text")
-
-                # ── DOWNLOAD HASIL ──
-                if hasil_ri or hasil_rj:
-                    rows_out = []
-                    if hasil_ri:
-                        rows_out.append({"Jenis": "Rawat Inap (RI)", "SEP": len(df_ri), "Total CBG": df_ri['Disetujui'].sum(),
-                                         "Tarif": f"{tarif_ri*100:.0f}%", "Jasa Pelayanan": round(hasil_ri['jasa_pelayanan']),
-                                         "Selisih CBG": round(hasil_ri['selisih_cbg']), "Jaspel Selisih": round(hasil_ri['jaspel_selisih']),
-                                         "Naik Kelas": hasil_ri['naik_kelas'], "Jaspel Total": round(hasil_ri['jaspel_total']),
-                                         "Jaspel Final": round(hasil_ri['jaspel_final'])})
-                    if hasil_rj:
-                        rows_out.append({"Jenis": "Rawat Jalan (RJ)", "SEP": len(df_rj), "Total CBG": df_rj['Disetujui'].sum(),
-                                         "Tarif": f"{tarif_rj*100:.0f}%", "Jasa Pelayanan": round(hasil_rj['jasa_pelayanan']),
-                                         "Selisih CBG": round(hasil_rj['selisih_cbg']), "Jaspel Selisih": round(hasil_rj['jaspel_selisih']),
-                                         "Naik Kelas": hasil_rj['naik_kelas'], "Jaspel Total": round(hasil_rj['jaspel_total']),
-                                         "Jaspel Final": round(hasil_rj['jaspel_final'])})
-                    df_out = pd.DataFrame(rows_out)
-                    csv_out = df_out.to_csv(index=False).encode("utf-8")
-                    st.download_button("⬇️ Download Hasil Audit CSV", data=csv_out, file_name="hasil_audit_jaspel_bpjs.csv", mime="text/csv")
-
-    # ─────────────────────────────────────────────────────────────────────────
-    # SUB-TAB 2: AUDIT NON-BPJS
-    # ─────────────────────────────────────────────────────────────────────────
-    with sub2:
-        st.markdown("### 🏪 Audit Jaspel Non BPJS")
-        st.info("💡 Fitur Audit Non-BPJS menggunakan data transaksi dari SIMRS. Upload CSV transaksi Non-BPJS untuk menghitung Jaspel.")
-
-        st.markdown("""
-**Formula Non-BPJS (SIMRS ICHA):**
-- **Barang/Paket BHP:** Basis = Jumlah × 3.85%
-- **Jasa/Rikjang:** Basis = Harga Beli
-- **Nilai per penerima:** Basis × (% dari Master Jaspel ID)
-        """)
-
-        csv_non_bpjs = st.file_uploader("Upload CSV Transaksi Non-BPJS", type=["csv"], key="non_bpjs_csv")
-        if csv_non_bpjs:
-            df_nb, err_nb = load_csv(csv_non_bpjs)
-            if err_nb:
-                st.error(f"❌ {err_nb}")
-            else:
-                st.success(f"✅ {len(df_nb):,} baris terbaca")
-                st.dataframe(df_nb.head(20), use_container_width=True)
+    pin = st.text_input("PIN AKSES", type="password", placeholder="••••")
+    if st.button("Masuk →"):
+        if pin == "1234":
+            st.session_state.logged_in = True
+            st.rerun()
         else:
-            st.caption("Format CSV: No.SEP, Disetujui (atau sesuaikan kolom Non-BPJS)")
+            st.error("❌ PIN salah. Coba lagi.")
+    st.stop()
 
-    # ─────────────────────────────────────────────────────────────────────────
-    # SUB-TAB 3: SIMULASI MANUAL
-    # ─────────────────────────────────────────────────────────────────────────
-    with sub3:
-        st.markdown("### 🧮 Simulasi Manual")
-        st.caption("Hitung Jaspel untuk 1 SEP secara manual")
 
-        c1, c2 = st.columns(2)
-        with c1:
-            sim_cbg = st.number_input("Klaim INA CBGs (Rp)", min_value=0, value=5000000, step=100000, key="sim_cbg")
-            sim_billing = st.number_input("Total Biaya Riil RS (Rp)", min_value=0, value=6000000, step=100000, key="sim_billing")
-            sim_jenis = st.selectbox("Jenis Rawat", list(TARIF.keys()), key="sim_jenis")
-            sim_naik = st.number_input("Jaspel Naik Kelas (Rp)", min_value=0, value=0, step=10000, key="sim_naik")
+# --- FUNGSI EKSTRAK NAMA PERIODE ---
+def ambil_nama_periode(pdf_path):
+    try:
+        with pdfplumber.open(pdf_path) as pdf:
+            first_page = pdf.pages[0]
+            text = first_page.extract_text()
+            bulan_pola = r"(JANUARI|FEBRUARI|MARET|APRIL|MEI|JUNI|JULI|AGUSTUS|SEPTEMBER|OKTOBER|NOVEMBER|DESEMBER)"
+            match = re.search(f"{bulan_pola}\s+(\d{{4}})", text, re.IGNORECASE)
+            if match:
+                bulan = match.group(1).upper()
+                tahun = match.group(2)
+                return f"FPK_{bulan}_{tahun}"
+    except Exception as e:
+        print(f"Gagal baca periode: {e}")
+    return "Hasil_Konversi_FPK"
 
-        with c2:
-            sim_tarif = TARIF[sim_jenis]
-            sim_hasil = hitung_jaspel(sim_cbg, sim_tarif, sim_billing, sim_naik)
 
-            st.markdown("**📊 Hasil Simulasi:**")
-            st.code(f"""
-Klaim INA CBGs    = {fmt_rp(sim_cbg)}
-Total Billing     = {fmt_rp(sim_billing)}
-Tarif             = {sim_tarif*100:.0f}%
+# --- FUNGSI PROSES DATA TABEL ---
+def process_data(pdf_path):
+    df_list = tabula.read_pdf(pdf_path, pages='all', multiple_tables=True, lattice=True, pandas_options={'header': None})
+    if not df_list:
+        raise ValueError("PDF tidak terbaca.")
+    cleaned_df_list = [df for df in df_list if df.shape[1] >= 6 and len(df) > 1]
+    df = pd.concat(cleaned_df_list, ignore_index=True)
+    df_data = df.iloc[:, :6].copy()
+    df_data = df_data[pd.to_numeric(df_data.iloc[:, 0], errors='coerce').notna()]
+    df_data.columns = ['No. Urut', 'No.SEP', 'Tgl. Verifikasi', 'Biaya Riil RS', 'Diajukan', 'Disetujui']
+    df_data['No.SEP'] = df_data['No.SEP'].astype(str).str.replace(r'[^a-zA-Z0-9]', '', regex=True).str.strip()
+    df_data['Disetujui'] = pd.to_numeric(df_data['Disetujui'].astype(str).str.replace(r'[^0-9]', '', regex=True), errors='coerce').fillna(0).astype(int)
+    return df_data[['No.SEP', 'Disetujui']].reset_index(drop=True)
 
-Jasa Pelayanan    = {fmt_rp(sim_cbg)} × {sim_tarif}
-                  = {fmt_rp(sim_hasil['jasa_pelayanan'])}
 
-Selisih CBGs      = {fmt_rp(sim_cbg)} − {fmt_rp(sim_billing)}
-                  = {fmt_rp(sim_hasil['selisih_cbg'])}
-                  {'→ NEGATIF, Jaspel Selisih = Rp 0' if sim_hasil['selisih_cbg'] <= 0 else '→ POSITIF'}
+# --- HALAMAN UTAMA ---
+st.markdown("""
+    <div class="app-header">
+        <div class="badge">⚡ Converter Tools</div>
+        <h1>FPK <span>Converter</span></h1>
+        <p>Upload PDF FPK, konversi otomatis ke CSV siap pakai</p>
+    </div>
+""", unsafe_allow_html=True)
 
-Jaspel Selisih    = {fmt_rp(sim_hasil['jaspel_selisih'])}
-Jaspel Naik Kelas = {fmt_rp(sim_naik)}
+uploaded_file = st.file_uploader(
+    "Upload PDF FPK di sini",
+    type=['pdf'],
+    help="Format yang diterima: .pdf"
+)
 
-Jaspel Total      = {fmt_rp(sim_hasil['jaspel_total'])}
-✅ Jaspel Final   = {fmt_rp(sim_hasil['jaspel_final'])}
-            """, language="text")
+if uploaded_file:
+    if st.button("⚡ Proses Sekarang"):
+        with st.spinner("Lagi dibaca isinya, tunggu bentar..."):
+            try:
+                with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as tmp:
+                    tmp.write(uploaded_file.getvalue())
+                    tmp_path = tmp.name
 
-    # ─────────────────────────────────────────────────────────────────────────
-    # SUB-TAB 4: MASTER JASPEL
-    # ─────────────────────────────────────────────────────────────────────────
-    with sub4:
-        st.markdown("### 📋 Master Jaspel ICHA")
-        st.caption("Referensi tarif dan distribusi Kantong Besar")
+                nama_periode = ambil_nama_periode(tmp_path)
+                df_result = process_data(tmp_path)
 
-        st.markdown("#### Tarif BPJS")
-        df_tarif = pd.DataFrame([
-            {"Jenis Rawat": k, "Tarif (%)": f"{v*100:.0f}%", "Tarif Desimal": v}
-            for k, v in TARIF.items()
-        ])
-        st.dataframe(df_tarif, use_container_width=True, hide_index=True)
+                st.session_state.final_df = df_result
+                st.session_state.final_total = df_result['Disetujui'].sum()
+                st.session_state.final_count = len(df_result)
+                st.session_state.auto_filename = f"{nama_periode}.csv"
 
-        st.markdown("#### Estimasi Kantong Besar")
-        col_kb1, col_kb2 = st.columns(2)
-        with col_kb1:
-            st.markdown("**Rawat Inap (RI)**")
-            st.dataframe(pd.DataFrame([
-                {"Jenis": k, "% Est.": f"{v:.1f}%"}
-                for k, v in KANTONG_RI.items()
-            ]), use_container_width=True, hide_index=True)
+                os.unlink(tmp_path)
+                st.success(f"✅ Berhasil diproses!")
 
-        with col_kb2:
-            st.markdown("**Rawat Jalan (RJ)**")
-            st.dataframe(pd.DataFrame([
-                {"Jenis": k, "% Est.": f"{v:.1f}%"}
-                for k, v in KANTONG_RJ.items()
-            ]), use_container_width=True, hide_index=True)
+            except Exception as e:
+                st.error(f"Gagal memproses: {e}")
 
-        st.info("💡 Nilai aktual kantong besar tergantung pada mix tindakan per pasien di SIMRS ICHA.")
+if 'final_df' in st.session_state:
+    st.markdown(f"""
+        <div class="file-badge">
+            📄 {st.session_state.auto_filename}
+        </div>
+    """, unsafe_allow_html=True)
+
+    total_rp = f"Rp {st.session_state.final_total:,.0f}".replace(",", ".")
+
+    st.markdown(f"""
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-label">Jumlah Data</div>
+                <div class="stat-value">{st.session_state.final_count}</div>
+                <div class="stat-sub">SEP records</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Total Nominal</div>
+                <div class="stat-value green">{total_rp}</div>
+                <div class="stat-sub">total disetujui</div>
+            </div>
+        </div>
+    """, unsafe_allow_html=True)
+
+    st.divider()
+
+    st.subheader("Preview Data")
+    df_preview = st.session_state.final_df.copy()
+    df_preview.insert(0, 'No', range(1, 1 + len(df_preview)))
+    st.dataframe(
+        df_preview,
+        use_container_width=True,
+        height=320,
+        hide_index=True,
+        column_config={
+            "No": st.column_config.NumberColumn("No", width=50),
+            "Disetujui": st.column_config.NumberColumn("Nominal Cair", format="Rp %d")
+        }
+    )
+
+    st.divider()
+
+    col1, col2 = st.columns([3, 1])
+    with col1:
+        csv_data = st.session_state.final_df.to_csv(index=False).encode('utf-8')
+        st.download_button(
+            label="⬇ Download CSV",
+            data=csv_data,
+            file_name=st.session_state.auto_filename,
+            mime="text/csv"
+        )
+    with col2:
+        with st.container():
+            st.markdown('<div class="reset-btn">', unsafe_allow_html=True)
+            if st.button("Reset"):
+                for key in ['final_df', 'final_total', 'final_count', 'auto_filename']:
+                    if key in st.session_state:
+                        del st.session_state[key]
+                st.rerun()
+            st.markdown('</div>', unsafe_allow_html=True)
