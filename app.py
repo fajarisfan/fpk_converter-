@@ -10,27 +10,31 @@ from datetime import datetime
 # --- KONFIGURASI HALAMAN ---
 st.set_page_config(page_title="FPK Converter", page_icon="⚡", layout="centered")
 
-# --- STYLE CSS MODERN ---
+# --- STYLE CSS MODERN (FIXED) ---
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Sora:wght@300;400;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap');
 
-    * { font-family: 'Sora', sans-serif !important; }
-    
-    #MainMenu {visibility: hidden;} 
-    footer {visibility: hidden;} 
+    html, body, [class*="css"] {
+        font-family: 'Sora', sans-serif !important;
+    }
+
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
     header {visibility: hidden;}
-    
+
     /* Background */
     .stApp {
         background-color: #0a0a0f;
-        background-image: 
+        background-image:
             radial-gradient(ellipse 80% 50% at 50% -20%, rgba(99, 102, 241, 0.15), transparent),
             radial-gradient(ellipse 40% 40% at 80% 80%, rgba(139, 92, 246, 0.08), transparent);
     }
-    
-    /* Sembunyiin semua elemen default streamlit yg ga perlu */
-    .block-container { padding-top: 2rem; max-width: 680px; }
+
+    .block-container {
+        padding-top: 2rem;
+        max-width: 680px;
+    }
 
     /* HEADER */
     .app-header {
@@ -63,6 +67,7 @@ st.markdown("""
         background: linear-gradient(135deg, #6366f1, #a78bfa);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
+        background-clip: text;
     }
     .app-header p {
         color: #64748b;
@@ -71,28 +76,28 @@ st.markdown("""
         font-weight: 300;
     }
 
-    /* LOGIN BOX */
-    .login-container {
-        background: rgba(255,255,255,0.03);
-        border: 1px solid rgba(255,255,255,0.07);
-        border-radius: 20px;
-        padding: 2.5rem;
-        backdrop-filter: blur(10px);
-        margin-top: 1rem;
+    /* EXPANDER */
+    [data-testid="stExpander"] {
+        background: rgba(255,255,255,0.02) !important;
+        border: 1px solid rgba(255,255,255,0.07) !important;
+        border-radius: 14px !important;
+        overflow: hidden !important;
+        margin-bottom: 1rem !important;
     }
-    
-    /* UPLOAD AREA */
-    .upload-zone {
-        background: rgba(255,255,255,0.02);
-        border: 1.5px dashed rgba(99, 102, 241, 0.35);
-        border-radius: 20px;
-        padding: 2rem;
-        transition: all 0.3s;
-        margin-bottom: 1rem;
+    [data-testid="stExpander"] summary {
+        color: #94a3b8 !important;
+        font-size: 0.85rem !important;
+        font-weight: 600 !important;
+        padding: 1rem 1.2rem !important;
     }
-    .upload-zone:hover {
-        border-color: rgba(99, 102, 241, 0.7);
-        background: rgba(99, 102, 241, 0.05);
+    [data-testid="stExpander"] summary:hover {
+        color: #cbd5e1 !important;
+    }
+    [data-testid="stExpanderDetails"] {
+        padding: 0 1.2rem 1.2rem !important;
+        color: #64748b !important;
+        font-size: 0.9rem !important;
+        line-height: 1.7 !important;
     }
 
     /* INPUT FIELDS */
@@ -120,30 +125,60 @@ st.markdown("""
         text-transform: uppercase !important;
     }
 
-    /* FILE UPLOADER */
-    .stFileUploader > div {
+    /* FILE UPLOADER — fix overlap dengan reset position */
+    [data-testid="stFileUploader"] {
+        position: relative !important;
+    }
+    [data-testid="stFileUploader"] section {
         background: rgba(255,255,255,0.02) !important;
         border: 1.5px dashed rgba(99, 102, 241, 0.35) !important;
         border-radius: 16px !important;
-        padding: 1.5rem !important;
-        transition: all 0.3s !important;
+        padding: 2rem 1.5rem !important;
+        transition: border-color 0.3s, background 0.3s !important;
+        position: relative !important;
+        overflow: visible !important;
     }
-    .stFileUploader > div:hover {
+    [data-testid="stFileUploader"] section:hover {
         border-color: rgba(99, 102, 241, 0.7) !important;
-        background: rgba(99, 102, 241, 0.05) !important;
+        background: rgba(99, 102, 241, 0.04) !important;
     }
-    .stFileUploader label {
-        color: #94a3b8 !important;
+    [data-testid="stFileUploaderDropzone"] {
+        display: flex !important;
+        flex-direction: column !important;
+        align-items: center !important;
+        gap: 0.75rem !important;
     }
     [data-testid="stFileUploaderDropzoneInstructions"] {
         color: #64748b !important;
+        text-align: center !important;
     }
     [data-testid="stFileUploaderDropzoneInstructions"] span {
         color: #818cf8 !important;
         font-weight: 600 !important;
     }
+    /* Tombol Browse Files */
+    [data-testid="stFileUploader"] section button {
+        background: rgba(99, 102, 241, 0.12) !important;
+        border: 1px solid rgba(99, 102, 241, 0.35) !important;
+        color: #818cf8 !important;
+        border-radius: 10px !important;
+        padding: 8px 20px !important;
+        font-size: 0.85rem !important;
+        font-weight: 600 !important;
+        cursor: pointer !important;
+        transition: all 0.2s !important;
+        position: relative !important;
+        z-index: 1 !important;
+    }
+    [data-testid="stFileUploader"] section button:hover {
+        background: rgba(99, 102, 241, 0.22) !important;
+        border-color: rgba(99, 102, 241, 0.6) !important;
+    }
+    [data-testid="fileDeleteBtn"] {
+        color: #ef4444 !important;
+    }
 
-    /* BUTTONS */
+    /* MAIN BUTTONS */
     .stButton > button {
         background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%) !important;
         color: white !important;
@@ -155,6 +190,7 @@ st.markdown("""
         letter-spacing: 0.5px !important;
         transition: all 0.2s ease !important;
         box-shadow: 0 4px 20px rgba(99, 102, 241, 0.25) !important;
+        width: 100% !important;
     }
     .stButton > button:hover {
         transform: translateY(-2px) !important;
@@ -165,18 +201,20 @@ st.markdown("""
         transform: translateY(0) !important;
     }
 
-    /* RESET BUTTON - khusus */
-    .reset-btn > button {
+    /* RESET BUTTON */
+    .reset-btn .stButton > button {
         background: transparent !important;
         border: 1px solid rgba(255,255,255,0.1) !important;
         color: #64748b !important;
         box-shadow: none !important;
+        height: 52px !important;
     }
-    .reset-btn > button:hover {
+    .reset-btn .stButton > button:hover {
         background: rgba(255,255,255,0.05) !important;
         color: #94a3b8 !important;
         transform: none !important;
         box-shadow: none !important;
+        filter: none !important;
     }
 
     /* DOWNLOAD BUTTON */
@@ -185,12 +223,19 @@ st.markdown("""
         border: 1px solid rgba(16, 185, 129, 0.3) !important;
         color: #34d399 !important;
         box-shadow: 0 4px 20px rgba(16, 185, 129, 0.1) !important;
+        border-radius: 12px !important;
+        height: 52px !important;
+        font-size: 0.9rem !important;
+        font-weight: 700 !important;
+        width: 100% !important;
+        transition: all 0.2s !important;
     }
     .stDownloadButton > button:hover {
         background: rgba(16, 185, 129, 0.2) !important;
         border-color: rgba(16, 185, 129, 0.5) !important;
         box-shadow: 0 8px 30px rgba(16, 185, 129, 0.2) !important;
         color: #6ee7b7 !important;
+        transform: translateY(-2px) !important;
     }
 
     /* STATS CARDS */
@@ -207,7 +252,6 @@ st.markdown("""
         padding: 1.5rem;
         position: relative;
         overflow: hidden;
-        transition: all 0.2s;
     }
     .stat-card::before {
         content: '';
@@ -216,7 +260,7 @@ st.markdown("""
         height: 2px;
         background: linear-gradient(90deg, #6366f1, #8b5cf6);
     }
-    .stat-card:last-child::before {
+    .stat-card.green-top::before {
         background: linear-gradient(90deg, #10b981, #34d399);
     }
     .stat-label {
@@ -239,24 +283,17 @@ st.markdown("""
         color: #334155;
         font-size: 0.75rem;
         margin-top: 0.4rem;
-        font-family: 'JetBrains Mono', monospace !important;
+        font-family: 'JetBrains Mono', monospace;
     }
 
-    /* SUCCESS & ERROR MSGS */
-    .stSuccess {
-        background: rgba(16, 185, 129, 0.08) !important;
-        border: 1px solid rgba(16, 185, 129, 0.2) !important;
+    /* ALERTS */
+    [data-testid="stAlert"] {
         border-radius: 12px !important;
-        color: #34d399 !important;
-    }
-    .stError {
-        background: rgba(239, 68, 68, 0.08) !important;
-        border: 1px solid rgba(239, 68, 68, 0.2) !important;
-        border-radius: 12px !important;
+        padding: 0.85rem 1rem !important;
     }
 
     /* SPINNER */
-    .stSpinner > div {
+    [data-testid="stSpinner"] > div {
         border-top-color: #6366f1 !important;
     }
 
@@ -267,17 +304,14 @@ st.markdown("""
     }
 
     /* DATAFRAME */
-    .stDataFrame {
+    [data-testid="stDataFrame"] {
         border-radius: 14px !important;
         overflow: hidden !important;
         border: 1px solid rgba(255,255,255,0.07) !important;
     }
-    [data-testid="stDataFrameResizable"] {
-        background: rgba(255,255,255,0.02) !important;
-    }
 
     /* SUBHEADER */
-    .stSubheader, h3 {
+    h3, .stSubheader {
         color: #94a3b8 !important;
         font-size: 0.8rem !important;
         font-weight: 700 !important;
@@ -285,7 +319,7 @@ st.markdown("""
         text-transform: uppercase !important;
     }
 
-    /* SUCCESS BADGE */
+    /* FILE BADGE */
     .file-badge {
         display: inline-flex;
         align-items: center;
@@ -375,7 +409,7 @@ with st.expander("ℹ️ Cara Penggunaan"):
     3. Klik **⚡ Proses Sekarang** dan tunggu data muncul.
     4. Cek total nominal, lalu klik **Download CSV**.
     """)
-    
+
 uploaded_file = st.file_uploader(
     "Upload PDF FPK di sini",
     type=['pdf'],
@@ -421,7 +455,7 @@ if 'final_df' in st.session_state:
                 <div class="stat-value">{st.session_state.final_count}</div>
                 <div class="stat-sub">SEP records</div>
             </div>
-            <div class="stat-card">
+            <div class="stat-card green-top">
                 <div class="stat-label">Total Nominal</div>
                 <div class="stat-value green">{total_rp}</div>
                 <div class="stat-sub">total disetujui</div>
