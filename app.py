@@ -6,7 +6,10 @@ import tabula
 import tempfile
 import re
 import pdfplumber
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
+
+def now_wib():
+    return datetime.now(timezone.utc) + timedelta(hours=7)
 
 # --- KONFIGURASI HALAMAN ---
 st.set_page_config(page_title="FPK Converter", page_icon="⚡", layout="centered")
@@ -411,7 +414,7 @@ if uploaded_file:
                 st.session_state.tingkat        = tingkat
 
                 save_log({
-                    "waktu"    : datetime.now().strftime("%d %b %Y, %H:%M"),
+                    "waktu"    : now_wib().strftime("%d %b %Y, %H:%M") + " WIB",
                     "nama_file": filename,
                     "tingkat"  : tingkat,
                     "jumlah"   : jumlah,
