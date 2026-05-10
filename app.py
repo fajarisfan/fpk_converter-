@@ -473,9 +473,12 @@ if st.session_state.logged_in:
 if not st.session_state.logged_in:
     st.markdown("""
         <div class="app-header">
-            <div class="badge">⚡ FPK Converter</div>
+            <div class="badge">⚡ FPK Converter &nbsp;·&nbsp; v1.0</div>
             <h1>Selamat <span>Datang</span></h1>
-            <p>Masukkan PIN untuk mengakses aplikasi</p>
+            <p>Aplikasi pribadi konversi data klaim BPJS Kesehatan</p>
+            <p style="font-size:0.75rem; margin-top:0.3rem; color:#334155;">
+                Masukkan PIN untuk melanjutkan
+            </p>
         </div>
     """, unsafe_allow_html=True)
 
@@ -675,9 +678,23 @@ if st.session_state.get("show_pin_form"):
 
 st.markdown("""
     <div class="app-header">
-        <div class="badge">⚡ Converter Tools</div>
+        <div class="badge">⚡ Converter Tools &nbsp;·&nbsp; v1.0</div>
         <h1>FPK <span>Converter</span></h1>
-        <p>Upload PDF FPK, konversi otomatis ke CSV siap pakai</p>
+        <p>Otomasi konversi data klaim BPJS Kesehatan ke CSV siap pakai</p>
+        <div style="display:flex; justify-content:center; gap:1rem; margin-top:1rem; flex-wrap:wrap;">
+            <span style="font-size:0.72rem; color:#475569; display:flex; align-items:center; gap:4px;">
+                ✦ Multi-file upload
+            </span>
+            <span style="font-size:0.72rem; color:#475569; display:flex; align-items:center; gap:4px;">
+                ✦ Auto-detect RITL / RJTL
+            </span>
+            <span style="font-size:0.72rem; color:#475569; display:flex; align-items:center; gap:4px;">
+                ✦ Cek duplikat SEP
+            </span>
+            <span style="font-size:0.72rem; color:#475569; display:flex; align-items:center; gap:4px;">
+                ✦ Riwayat & rekap
+            </span>
+        </div>
     </div>
 """, unsafe_allow_html=True)
 
@@ -936,16 +953,62 @@ else:
                 st.markdown('</div>', unsafe_allow_html=True)
 
 # ── WATERMARK FOOTER ─────────────────────────────────────────
-st.markdown("""
-<div style="text-align:center; padding:2rem 0 1rem; margin-top:2rem;
-     border-top:1px solid rgba(255,255,255,0.05);">
+dark = st.session_state.dark_mode
+ft_border = "rgba(255,255,255,0.05)" if dark else "rgba(0,0,0,0.06)"
+ft_dim    = "#334155" if dark else "#94a3b8"
+ft_dimmer = "#1e293b" if dark else "#cbd5e1"
+ft_muted  = "#475569" if dark else "#64748b"
+
+st.markdown(f"""
+<div style="text-align:center; padding:2.5rem 1rem 1.5rem; margin-top:2.5rem;
+     border-top:1px solid {ft_border};">
+
+    <!-- Logo / App name -->
+    <div style="margin-bottom:1rem;">
+        <div style="display:inline-flex; align-items:center; gap:8px;
+             background:rgba(99,102,241,0.1); border:1px solid rgba(99,102,241,0.2);
+             padding:6px 18px; border-radius:100px; margin-bottom:0.8rem;">
+            <span style="font-size:14px;">⚡</span>
+            <span style="font-family:'JetBrains Mono',monospace; font-size:0.78rem;
+                  font-weight:700; color:#818cf8; letter-spacing:2px;">FPK CONVERTER</span>
+        </div>
+    </div>
+
+    <!-- Tagline -->
+    <div style="font-size:0.8rem; color:{ft_muted}; font-weight:300;
+         margin-bottom:1.2rem; letter-spacing:0.3px;">
+        Solusi otomasi konversi data klaim BPJS Kesehatan
+    </div>
+
+    <!-- Divider dots -->
+    <div style="display:flex; align-items:center; justify-content:center;
+         gap:6px; margin-bottom:1.2rem;">
+        <div style="width:4px; height:4px; border-radius:50%; background:rgba(99,102,241,0.4);"></div>
+        <div style="width:4px; height:4px; border-radius:50%; background:rgba(139,92,246,0.4);"></div>
+        <div style="width:4px; height:4px; border-radius:50%; background:rgba(99,102,241,0.4);"></div>
+    </div>
+
+    <!-- Author info -->
     <div style="font-family:'JetBrains Mono',monospace; font-size:0.72rem;
-         color:#334155; letter-spacing:1px;">
-        ⚡ FPK Converter &nbsp;·&nbsp; Dibuat oleh <strong style="color:#6366f1;">Isfan Fajar Anugrah</strong>
-        &nbsp;·&nbsp; 2025
+         color:{ft_dim}; letter-spacing:1px; margin-bottom:0.4rem;">
+        Dikembangkan oleh
+        <strong style="color:#6366f1; font-size:0.78rem;">Isfan Fajar Anugrah</strong>
     </div>
-    <div style="font-size:0.65rem; color:#1e293b; margin-top:4px; letter-spacing:0.5px;">
-        Hak Cipta Pribadi — Dilarang digunakan tanpa izin pemilik
+
+    <!-- Version + year -->
+    <div style="font-size:0.68rem; color:{ft_dimmer}; letter-spacing:0.5px; margin-bottom:0.8rem;">
+        Versi 1.0 &nbsp;·&nbsp; 2025 &nbsp;·&nbsp; All Rights Reserved
     </div>
+
+    <!-- Copyright -->
+    <div style="display:inline-block;
+         background:rgba(239,68,68,0.06); border:1px solid rgba(239,68,68,0.15);
+         border-radius:8px; padding:6px 16px;">
+        <span style="font-size:0.65rem; color:#f87171; letter-spacing:0.5px;">
+            ⚠️ Hak Cipta Pribadi — Dilarang digandakan, dimodifikasi, atau digunakan
+            tanpa izin tertulis dari pemilik
+        </span>
+    </div>
+
 </div>
 """, unsafe_allow_html=True)
