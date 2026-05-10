@@ -681,12 +681,50 @@ st.markdown("""
     </div>
 """, unsafe_allow_html=True)
 
-with st.expander("ℹ️ Cara Penggunaan"):
+with st.expander("ℹ️ Fitur & Cara Penggunaan"):
     st.markdown("""
-    1. Pastikan file PDF adalah **Lampiran FPK** (ada tabel rincian SEP).
-    2. Upload satu atau beberapa PDF sekaligus.
-    3. Klik **⚡ Proses Sekarang** — nama file otomatis terdeteksi (RITL/RJTL + Bulan + Tahun).
-    4. Tiap file tampil di tab masing-masing, download CSV per file.
+    ### ⚡ Konversi PDF → CSV
+    - Upload satu atau beberapa PDF FPK BPJS sekaligus (maks 200MB/file)
+    - Klik **⚡ Proses Sekarang** — sistem otomatis membaca isi PDF
+    - Nama file CSV terdeteksi otomatis dari PDF: **FPK_RITL_MARET_2026.csv** atau **FPK_RJTL_MARET_2026.csv**
+    - Kalau upload lebih dari 1 PDF, hasil tiap file tampil di **tab terpisah**
+    - Output CSV hanya berisi 2 kolom: **No.SEP** dan **Disetujui** — siap upload ke SIMRS
+
+    ### ⚠️ Cek Duplikat No.SEP
+    - Setelah diproses, sistem otomatis cek apakah ada **No.SEP yang muncul lebih dari sekali**
+    - Kalau ada duplikat, muncul warning kuning beserta daftar No.SEP yang bermasalah
+    - Periksa data sebelum diserahkan ke rekan yang upload ke SIMRS
+
+    ### 📥 Download & Status
+    - Klik **⬇ Download CSV** untuk mengunduh hasil konversi
+    - Status di log otomatis berubah jadi **✓ Selesai** setelah download
+    - Kalau belum didownload, status **⏳ Belum Diambil**
+    - Bisa juga tandai manual lewat tombol **✓ Tandai** di log
+
+    ### 📅 Rekap Per Bulan
+    - Di bawah chart ada rekap ringkas per periode
+    - Tiap baris tampil: berapa kali konversi, total SEP, tingkat pelayanan, dan total nominal
+
+    ### 📊 Chart Rekap Periode
+    - Bar chart otomatis terbentuk dari riwayat konversi
+    - Warna berbeda per tingkat: **ungu = RITL**, **biru = RJTL**
+    - Sumbu Y dalam satuan juta rupiah (M)
+
+    ### 🕓 Riwayat Konversi
+    - Semua aktivitas konversi tersimpan otomatis (maks 100 entri)
+    - Tampil: nama file, badge RITL/RJTL, waktu konversi, total nominal, jumlah SEP, status
+    - Summary di atas log: total konversi, selesai, pending, total nominal kumulatif
+    - Klik **Hapus Semua** untuk reset seluruh riwayat
+
+    ### 🔑 Keamanan
+    - **PIN tidak terlihat** saat diketik (seperti terminal Linux)
+    - **Salah PIN 5x** → aplikasi dikunci otomatis 5 menit
+    - **Session timeout 8 jam** → otomatis logout jika tidak aktif
+    - **Ganti PIN** lewat tombol 🔑 di pojok kanan atas tanpa edit code
+    - **Logout** lewat tombol 🚪 di pojok kanan atas
+
+    ### 🌙 Tema
+    - Toggle **dark/light mode** lewat tombol ☀️/🌙 di pojok kanan atas
     """)
 
 uploaded_files = st.file_uploader(
@@ -903,8 +941,8 @@ st.markdown("""
      border-top:1px solid rgba(255,255,255,0.05);">
     <div style="font-family:'JetBrains Mono',monospace; font-size:0.72rem;
          color:#334155; letter-spacing:1px;">
-        ⚡ FPK Converter &nbsp;·&nbsp; Dibuat oleh <strong style="color:#6366f1;">Icha</strong>
-        &nbsp;·&nbsp; RSUD Kota Cilegon &nbsp;·&nbsp; 2025
+        ⚡ FPK Converter &nbsp;·&nbsp; Dibuat oleh <strong style="color:#6366f1;">Isfan Fajar Anugrah</strong>
+        &nbsp;·&nbsp; 2025
     </div>
     <div style="font-size:0.65rem; color:#1e293b; margin-top:4px; letter-spacing:0.5px;">
         Hak Cipta Pribadi — Dilarang digunakan tanpa izin pemilik
