@@ -36,6 +36,82 @@ def hapus_log():
     if os.path.exists(LOG_FILE):
         os.remove(LOG_FILE)
 
+def update_log_status(nama_file: str, status: str):
+    """Update status entri log berdasarkan nama file."""
+    log = load_log()
+    for item in log:
+        if item.get('nama_file') == nama_file:
+            item['status']        = status
+            item['waktu_selesai'] = now_wib().strftime("%d %b %Y, %H:%M") + " WIB" if status == "Selesai" else None
+            break
+    with open(LOG_FILE, "w") as f:
+        json.dump(log[:100], f, ensure_ascii=False, indent=2)
+
+# ── PIN FILE ─────────────────────────────────────────────────
+PIN_FILE    = "pin_app.json"
+MAX_ATTEMPT = 5
+LOCKOUT_MIN = 5
+
+def load_pin():
+    if os.path.exists(PIN_FILE):
+        try:
+            with open(PIN_FILE, "r") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    # Default PIN pertama kali
+    data = {"pin": "1234", "attempts": 0, "locked_until": None}
+    save_pin(data)
+    return data
+
+def save_pin(data: dict):
+    with open(PIN_FILE, "w") as f:
+        json.dump(data, f)
+
+def is_locked(data: dict):
+    if data.get("locked_until"):
+        locked_until = datetime.fromisoformat(data["locked_until"])
+        if now_wib() < locked_until:
+            sisa = (locked_until - now_wib()).seconds // 60 + 1
+            return True, sisa
+        else:
+            data["attempts"]    = 0
+            data["locked_until"] = None
+            save_pin(data)
+    return False, 0
+
+def check_pin(input_pin: str):
+    data  = load_pin()
+    locked, sisa = is_locked(data)
+    if locked:
+        return False, f"🔒 Terlalu banyak percobaan. Coba lagi dalam **{sisa} menit**."
+    if input_pin == data["pin"]:
+        data["attempts"]    = 0
+        data["locked_until"] = None
+        save_pin(data)
+        return True, ""
+    else:
+        data["attempts"] += 1
+        sisa_attempt = MAX_ATTEMPT - data["attempts"]
+        if data["attempts"] >= MAX_ATTEMPT:
+            data["locked_until"] = (now_wib() + timedelta(minutes=LOCKOUT_MIN)).isoformat()
+            save_pin(data)
+            return False, f"🔒 PIN salah {MAX_ATTEMPT}x. Dikunci selama **{LOCKOUT_MIN} menit**."
+        save_pin(data)
+        return False, f"❌ PIN salah. Sisa percobaan: **{sisa_attempt}x**."
+
+def change_pin(pin_lama: str, pin_baru: str, pin_konfirm: str):
+    data = load_pin()
+    if pin_lama != data["pin"]:
+        return False, "❌ PIN lama tidak cocok."
+    if len(pin_baru) < 4:
+        return False, "❌ PIN baru minimal 4 karakter."
+    if pin_baru != pin_konfirm:
+        return False, "❌ Konfirmasi PIN tidak cocok."
+    data["pin"] = pin_baru
+    save_pin(data)
+    return True, "✅ PIN berhasil diubah."
+
 # ── THEME CSS ────────────────────────────────────────────────
 def inject_css(dark: bool):
     if dark:
@@ -166,6 +242,16 @@ html, body, [class*="css"] {{ font-family: 'Sora', sans-serif !important; }}
 .stTextInput label {{
     color:{label_col} !important; font-size:0.8rem !important;
     font-weight:600 !important; letter-spacing:1px !important; text-transform:uppercase !important;
+}}
+
+/* PIN invisible - Linux terminal style */
+input[type="password"] {{
+    -webkit-text-security: none !important;
+    color: transparent !important;
+    caret-color: #818cf8 !important;
+}}
+input[type="password"]:focus {{
+    color: transparent !important;
 }}
 
 /* FILE UPLOADER */
@@ -309,6 +395,40 @@ html, body, [class*="css"] {{ font-family: 'Sora', sans-serif !important; }}
 .log-badge.ritl {{ background:rgba(139,92,246,0.15); border:1px solid rgba(139,92,246,0.3); color:#a78bfa; }}
 .log-badge.rjtl {{ background:rgba(59,130,246,0.15); border:1px solid rgba(59,130,246,0.3); color:#60a5fa; }}
 .log-badge.other {{ background:rgba(100,116,139,0.12); border:1px solid rgba(100,116,139,0.25); color:#94a3b8; }}
+/* REKAP CARD */
+.rekap-card {{
+    background:{surface}; border:1px solid {border};
+    border-radius:14px; padding:1rem 1.25rem; margin-bottom:0.55rem;
+    display:flex; align-items:center; justify-content:space-between; gap:1rem;
+    transition:border-color 0.2s;
+}}
+.rekap-card:hover {{ border-color:rgba(99,102,241,0.25); }}
+.rekap-period {{
+    color:{text_h}; font-size:0.9rem; font-weight:700;
+    font-family:'JetBrains Mono',monospace; margin-bottom:0.25rem;
+}}
+.rekap-meta {{ color:{text_muted}; font-size:0.72rem; font-family:'JetBrains Mono',monospace; }}
+.rekap-total {{
+    color:#34d399; font-size:0.85rem; font-weight:700;
+    font-family:'JetBrains Mono',monospace; white-space:nowrap; text-align:right;
+}}
+
+/* STATUS BADGE */
+.status-selesai {{
+    display:inline-flex; align-items:center; gap:4px;
+    background:rgba(16,185,129,0.12); border:1px solid rgba(16,185,129,0.3);
+    color:#34d399; padding:2px 10px; border-radius:100px;
+    font-size:0.65rem; font-weight:700; letter-spacing:1px;
+    font-family:'JetBrains Mono',monospace;
+}}
+.status-pending {{
+    display:inline-flex; align-items:center; gap:4px;
+    background:rgba(251,191,36,0.1); border:1px solid rgba(251,191,36,0.25);
+    color:#fbbf24; padding:2px 10px; border-radius:100px;
+    font-size:0.65rem; font-weight:700; letter-spacing:1px;
+    font-family:'JetBrains Mono',monospace;
+}}
+
 .log-empty {{ color:{text_dim}; font-size:0.85rem; text-align:center; padding:2rem 0; font-style:italic; }}
 
 /* SECTION TITLE */
@@ -339,6 +459,17 @@ if 'dark_mode' not in st.session_state:
 
 inject_css(st.session_state.dark_mode)
 
+# Session timeout — 8 jam
+SESSION_TIMEOUT_HOURS = 8
+if st.session_state.logged_in:
+    login_time = st.session_state.get("login_time")
+    if login_time:
+        elapsed = (now_wib() - datetime.fromisoformat(login_time)).total_seconds() / 3600
+        if elapsed > SESSION_TIMEOUT_HOURS:
+            st.session_state.logged_in = False
+            st.session_state.login_time = None
+            st.rerun()
+
 if not st.session_state.logged_in:
     st.markdown("""
         <div class="app-header">
@@ -347,13 +478,21 @@ if not st.session_state.logged_in:
             <p>Masukkan PIN untuk mengakses aplikasi</p>
         </div>
     """, unsafe_allow_html=True)
-    pin = st.text_input("PIN AKSES", type="password", placeholder="••••")
-    if st.button("Masuk →"):
-        if pin == "1234":
-            st.session_state.logged_in = True
-            st.rerun()
-        else:
-            st.error("❌ PIN salah. Coba lagi.")
+
+    pin_data  = load_pin()
+    locked, sisa_mnt = is_locked(pin_data)
+    if locked:
+        st.error(f"🔒 Terlalu banyak percobaan salah. Coba lagi dalam **{sisa_mnt} menit**.")
+    else:
+        pin_input = st.text_input("PIN AKSES", type="password", placeholder="")
+        if st.button("Masuk →"):
+            ok, msg = check_pin(pin_input)
+            if ok:
+                st.session_state.logged_in  = True
+                st.session_state.login_time = now_wib().isoformat()
+                st.rerun()
+            else:
+                st.error(msg)
     st.stop()
 
 
@@ -436,13 +575,22 @@ def render_result(res, idx=0):
                      "No": st.column_config.NumberColumn("No", width=50),
                      "Disetujui": st.column_config.NumberColumn("Nominal Cair", format="Rp %d"),
                  })
+
+    # Cek duplikat No.SEP
+    dup = res['df'][res['df']['No.SEP'].duplicated(keep=False)]
+    if not dup.empty:
+        dup_list = ', '.join(dup['No.SEP'].unique().tolist())
+        st.warning(f"⚠️ **{len(dup['No.SEP'].unique())} No.SEP duplikat ditemukan:** {dup_list}")
     st.divider()
     col1, col2 = st.columns([3, 1])
     with col1:
-        csv = res['df'].to_csv(index=False).encode('utf-8')
-        st.download_button(label="⬇ Download CSV", data=csv,
-                           file_name=res['filename'], mime="text/csv",
-                           key=f"dl_{idx}")
+        csv        = res['df'].to_csv(index=False).encode('utf-8')
+        downloaded = st.download_button(label="⬇ Download CSV", data=csv,
+                                        file_name=res['filename'], mime="text/csv",
+                                        key=f"dl_{idx}")
+        if downloaded:
+            update_log_status(res['filename'], 'Selesai')
+            st.rerun()
     with col2:
         st.markdown('<div class="reset-btn">', unsafe_allow_html=True)
         if st.button("Reset", key=f"reset_{idx}"):
@@ -486,16 +634,44 @@ def build_chart(log_data):
 # HALAMAN UTAMA
 # ══════════════════════════════════════════════════════════════
 
-# Theme toggle button (top right)
-_, col_toggle = st.columns([6, 1])
-with col_toggle:
+# Top bar: theme toggle + ganti PIN + logout
+col_sp, col_theme, col_pin, col_logout = st.columns([4, 1, 1, 1])
+
+with col_theme:
     icon = st.session_state.get('_toggle_icon', '☀️')
-    tip  = st.session_state.get('_toggle_tip', 'Light Mode')
     st.markdown('<div class="toggle-btn">', unsafe_allow_html=True)
-    if st.button(icon, help=tip, key="theme_toggle"):
+    if st.button(icon, help="Ganti tema", key="theme_toggle"):
         st.session_state.dark_mode = not st.session_state.dark_mode
         st.rerun()
     st.markdown('</div>', unsafe_allow_html=True)
+
+with col_pin:
+    st.markdown('<div class="toggle-btn">', unsafe_allow_html=True)
+    if st.button("🔑", help="Ganti PIN", key="open_pin"):
+        st.session_state.show_pin_form = not st.session_state.get("show_pin_form", False)
+    st.markdown('</div>', unsafe_allow_html=True)
+
+with col_logout:
+    st.markdown('<div class="toggle-btn">', unsafe_allow_html=True)
+    if st.button("🚪", help="Logout", key="logout_btn"):
+        for k in list(st.session_state.keys()):
+            del st.session_state[k]
+        st.rerun()
+    st.markdown('</div>', unsafe_allow_html=True)
+
+# Form ganti PIN
+if st.session_state.get("show_pin_form"):
+    with st.expander("🔑 Ganti PIN", expanded=True):
+        p_lama    = st.text_input("PIN Lama",    type="password", placeholder="", key="p_lama")
+        p_baru    = st.text_input("PIN Baru",    type="password", placeholder="", key="p_baru")
+        p_konfirm = st.text_input("Konfirmasi PIN Baru", type="password", placeholder="", key="p_konfirm")
+        if st.button("Simpan PIN Baru", key="save_pin_btn"):
+            ok, msg = change_pin(p_lama, p_baru, p_konfirm)
+            if ok:
+                st.success(msg)
+                st.session_state.show_pin_form = False
+            else:
+                st.error(msg)
 
 st.markdown("""
     <div class="app-header">
@@ -549,11 +725,13 @@ if uploaded_files:
                     'tingkat' : tingkat,
                 })
                 save_log({
-                    'waktu'    : now_wib().strftime("%d %b %Y, %H:%M") + " WIB",
-                    'nama_file': filename,
-                    'tingkat'  : tingkat,
-                    'jumlah'   : jumlah,
-                    'total'    : total,
+                    'waktu'        : now_wib().strftime("%d %b %Y, %H:%M") + " WIB",
+                    'nama_file'    : filename,
+                    'tingkat'      : tingkat,
+                    'jumlah'       : jumlah,
+                    'total'        : total,
+                    'status'       : 'Belum Diambil',
+                    'waktu_selesai': None,
                 })
             except Exception as e:
                 errors.append(f"❌ {uf.name}: {e}")
@@ -586,6 +764,41 @@ if st.session_state.get('results'):
 st.divider()
 log_data = load_log()
 
+# -- Monthly summary rekap --
+if log_data:
+    bulan_order = ["JANUARI","FEBRUARI","MARET","APRIL","MEI","JUNI",
+                   "JULI","AGUSTUS","SEPTEMBER","OKTOBER","NOVEMBER","DESEMBER"]
+    rekap = {}
+    for item in log_data:
+        m = re.search(r'FPK_(?:RITL|RJTL|RITP|RJTP|FPK)?_?([A-Z]+)_(\d{4})', item['nama_file'])
+        period = f"{m.group(1)} {m.group(2)}" if m else "Lainnya"
+        if period not in rekap:
+            rekap[period] = {'total': 0, 'count': 0, 'konversi': 0, 'tingkats': set()}
+        rekap[period]['total']    += item['total']
+        rekap[period]['count']    += item['jumlah']
+        rekap[period]['konversi'] += 1
+        rekap[period]['tingkats'].add(item.get('tingkat', ''))
+
+    sorted_periods = sorted(rekap.keys(),
+        key=lambda x: (x.split()[-1], bulan_order.index(x.split()[0])
+                       if x.split()[0] in bulan_order else 99), reverse=True)
+
+    st.markdown('<div class="section-title">📅 Rekap Per Bulan</div>', unsafe_allow_html=True)
+    for p in sorted_periods:
+        r        = rekap[p]
+        total_rp = f"Rp {r['total']:,.0f}".replace(",", ".")
+        tkt_str  = " · ".join(sorted(t for t in r['tingkats'] if t))
+        st.markdown(f"""
+        <div class="rekap-card">
+            <div class="rekap-left">
+                <div class="rekap-period">{p}</div>
+                <div class="rekap-meta">{r['konversi']}x konversi &nbsp;·&nbsp; {r['count']} SEP &nbsp;·&nbsp; {tkt_str}</div>
+            </div>
+            <div class="rekap-total">{total_rp}</div>
+        </div>
+        """, unsafe_allow_html=True)
+    st.divider()
+
 # -- Chart --
 if log_data:
     st.markdown('<div class="section-title">📊 Rekap Per Periode</div>', unsafe_allow_html=True)
@@ -594,6 +807,41 @@ if log_data:
         st.bar_chart(df_chart, use_container_width=True, height=220,
                      color=["#a78bfa","#60a5fa","#34d399","#fb923c"][:len(df_chart.columns)])
     st.divider()
+
+# -- Log summary stats --
+if log_data:
+    total_entri  = len(log_data)
+    total_selesai   = sum(1 for x in log_data if x.get('status') == 'Selesai')
+    total_pending   = total_entri - total_selesai
+    total_nominal   = sum(x['total'] for x in log_data)
+    nominal_fmt     = f"Rp {total_nominal:,.0f}".replace(",", ".")
+
+    dark = st.session_state.dark_mode
+    dim  = '#334155' if dark else '#94a3b8'
+    surf = 'rgba(255,255,255,0.03)' if dark else 'rgba(0,0,0,0.02)'
+    bdr  = 'rgba(255,255,255,0.07)' if dark else 'rgba(0,0,0,0.08)'
+    th   = '#f1f5f9' if dark else '#1e293b'
+
+    st.markdown(f"""
+    <div style="display:grid; grid-template-columns:1fr 1fr 1fr 1fr; gap:0.6rem; margin-bottom:1rem;">
+        <div style="background:{surf}; border:1px solid {bdr}; border-radius:12px; padding:0.9rem 1rem;">
+            <div style="color:{dim}; font-size:9px; font-weight:700; letter-spacing:2px; text-transform:uppercase; margin-bottom:4px;">Total Konversi</div>
+            <div style="color:{th}; font-size:1.3rem; font-weight:800;">{total_entri}</div>
+        </div>
+        <div style="background:{surf}; border:1px solid {bdr}; border-radius:12px; padding:0.9rem 1rem;">
+            <div style="color:{dim}; font-size:9px; font-weight:700; letter-spacing:2px; text-transform:uppercase; margin-bottom:4px;">Selesai</div>
+            <div style="color:#34d399; font-size:1.3rem; font-weight:800;">{total_selesai}</div>
+        </div>
+        <div style="background:{surf}; border:1px solid {bdr}; border-radius:12px; padding:0.9rem 1rem;">
+            <div style="color:{dim}; font-size:9px; font-weight:700; letter-spacing:2px; text-transform:uppercase; margin-bottom:4px;">Pending</div>
+            <div style="color:#fbbf24; font-size:1.3rem; font-weight:800;">{total_pending}</div>
+        </div>
+        <div style="background:{surf}; border:1px solid {bdr}; border-radius:12px; padding:0.9rem 1rem; overflow:hidden;">
+            <div style="color:{dim}; font-size:9px; font-weight:700; letter-spacing:2px; text-transform:uppercase; margin-bottom:4px;">Total Nominal</div>
+            <div style="color:#818cf8; font-size:0.8rem; font-weight:800; white-space:nowrap;">{nominal_fmt}</div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
 
 # -- Log header --
 col_title, col_hapus = st.columns([4, 1])
@@ -611,21 +859,55 @@ with col_hapus:
 if not log_data:
     st.markdown('<div class="log-empty">Belum ada riwayat konversi.</div>', unsafe_allow_html=True)
 else:
-    html = ""
-    for item in log_data:
+    for i, item in enumerate(log_data):
         tkt      = item.get('tingkat', '')
         t_cls    = tkt.lower() if tkt in ('RITL','RJTL','RITP','RJTP') else 'other'
         badge    = f'<span class="log-badge {t_cls}">{tkt}</span>' if tkt else ''
         total_rp = f"Rp {item['total']:,.0f}".replace(",", ".")
-        html += f"""
+        status   = item.get('status', 'Belum Diambil')
+        wkt_sel  = item.get('waktu_selesai')
+
+        if status == 'Selesai':
+            status_html = f'<span class="status-selesai">✓ Selesai</span>'
+            footer_extra = f'<span class="log-item-sep">·</span><span class="log-item-time">📥 {wkt_sel}</span>' if wkt_sel else ''
+        else:
+            status_html  = '<span class="status-pending">⏳ Belum Diambil</span>'
+            footer_extra = ''
+
+        st.markdown(f"""
         <div class="log-item">
-            <div class="log-item-name">📄 {item['nama_file']} {badge}</div>
+            <div class="log-item-name">📄 {item['nama_file']} {badge} {status_html}</div>
             <div class="log-item-footer">
                 <span class="log-item-time">🕓 {item['waktu']}</span>
                 <span class="log-item-sep">·</span>
                 <span class="log-item-total">{total_rp}</span>
                 <span class="log-item-sep">·</span>
                 <span class="log-item-count">{item['jumlah']} SEP</span>
+                {footer_extra}
             </div>
-        </div>"""
-    st.markdown(html, unsafe_allow_html=True)
+        </div>""", unsafe_allow_html=True)
+
+        # Tombol manual tandai selesai
+        if status != 'Selesai':
+            col_a, col_b = st.columns([5, 1])
+            with col_b:
+                st.markdown('<div class="selesai-btn" style="margin-top:-0.4rem;">', unsafe_allow_html=True)
+                if st.button("✓ Tandai", key=f"tandai_{i}"):
+                    update_log_status(item['nama_file'], 'Selesai')
+                    st.rerun()
+                st.markdown('</div>', unsafe_allow_html=True)
+
+# ── WATERMARK FOOTER ─────────────────────────────────────────
+st.markdown("""
+<div style="text-align:center; padding:2rem 0 1rem; margin-top:2rem;
+     border-top:1px solid rgba(255,255,255,0.05);">
+    <div style="font-family:'JetBrains Mono',monospace; font-size:0.72rem;
+         color:#334155; letter-spacing:1px;">
+        ⚡ FPK Converter &nbsp;·&nbsp; Dibuat oleh <strong style="color:#6366f1;">Icha</strong>
+        &nbsp;·&nbsp; RSUD Kota Cilegon &nbsp;·&nbsp; 2025
+    </div>
+    <div style="font-size:0.65rem; color:#1e293b; margin-top:4px; letter-spacing:0.5px;">
+        Hak Cipta Pribadi — Dilarang digunakan tanpa izin pemilik
+    </div>
+</div>
+""", unsafe_allow_html=True)
